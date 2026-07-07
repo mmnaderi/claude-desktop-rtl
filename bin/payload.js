@@ -239,7 +239,12 @@ const updateDynamicCSS = () => {
         textarea:not(.rtl-widget-container *), 
         [contenteditable="true"]:not(.rtl-widget-container *), 
         [contenteditable="true"] p:not(.rtl-widget-container *),
-        [data-lexical-text="true"]:not(.rtl-widget-container *) {
+        [data-lexical-text="true"]:not(.rtl-widget-container *),
+        table:not(.rtl-widget-container *),
+        thead:not(.rtl-widget-container *),
+        tr:not(.rtl-widget-container *),
+        th:not(.rtl-widget-container *),
+        td:not(.rtl-widget-container *) {
             direction: rtl !important;
             text-align: right !important;
             unicode-bidi: isolate !important;
@@ -283,8 +288,13 @@ const updateDynamicCSS = () => {
         }
         
         /* Smart RTL using CSS unicode-bidi plaintext */
-        p, h1, h2, h3, h4, h5, h6, li, span, div, [role="presentation"] {
+        p, h1, h2, h3, h4, h5, h6, li, span, div, td, th, [role="presentation"] {
             unicode-bidi: plaintext !important;
+            text-align: start !important;
+        }
+        
+        /* Overrides to prevent thead .text-left from messing up alignment in RTL tables */
+        table[dir="rtl"] th, table[dir="rtl"] td, table[dir="rtl"] thead {
             text-align: start !important;
         }
         
