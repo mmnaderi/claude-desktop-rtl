@@ -352,9 +352,8 @@ const updateDynamicCSS = () => {
             line-height: ${savedLH} !important;
         }
 
-        /* Exception for Thinking Chain: Always enforce Smart RTL and LTR default direction */
-        [data-timeline-text], [data-timeline-text] *,
-        .group\\/timeline-text, .group\\/timeline-text * {
+        /* Exception for Thinking Chain: Enforce Smart RTL & LTR default direction */
+        body :is([data-timeline-text], .group\\/timeline-text) :is(p, li, h1, h2, h3, h4, h5, h6, textarea, table, thead, tr, th, td) {
             direction: ltr !important;
             unicode-bidi: plaintext !important;
             text-align: start !important;
