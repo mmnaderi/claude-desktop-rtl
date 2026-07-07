@@ -351,6 +351,14 @@ const updateDynamicCSS = () => {
         [data-lexical-text="true"]:not(.rtl-widget-container *) {
             line-height: ${savedLH} !important;
         }
+
+        /* Exception for Thinking Chain: Always enforce Smart RTL and LTR default direction */
+        [data-timeline-text], [data-timeline-text] *,
+        .group\\/timeline-text, .group\\/timeline-text * {
+            direction: ltr !important;
+            unicode-bidi: plaintext !important;
+            text-align: start !important;
+        }
     `;
     
     if (!rtlStyle.parentNode) {
