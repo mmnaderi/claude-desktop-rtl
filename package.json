@@ -15,7 +15,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/mmnaderi/claude-rtl.git"
+    "url": "git+https://github.com/mmnaderi/claude-desktop-rtl.git"
   },
   "keywords": [
     "claude",
@@ -30,9 +30,9 @@
   "author": "mmnaderi <mmnaderi.ir@gmail.com>",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/mmnaderi/claude-rtl/issues"
+    "url": "https://github.com/mmnaderi/claude-desktop-rtl/issues"
   },
-  "homepage": "https://github.com/mmnaderi/claude-rtl#readme",
+  "homepage": "https://github.com/mmnaderi/claude-desktop-rtl#readme",
   "dependencies": {
     "@electron/asar": "^4.2.0",
     "figlet": "^1.11.0",
