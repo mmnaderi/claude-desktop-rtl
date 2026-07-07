@@ -9,6 +9,9 @@ let savedEnFont = rtlConfig.enFont || '';
 let savedCodeFont = rtlConfig.codeFont || '';
 let savedLH = rtlConfig.lh || '1.6';
 
+let widgetStyle;
+let widgetWrapper;
+
 // Helper to safely inject styles/elements when head/body become available
 const safeInject = (element, targetType = 'head') => {
     const tryInject = () => {
@@ -23,7 +26,7 @@ const safeInject = (element, targetType = 'head') => {
 };
 
 if (!document.getElementById('rtl-widget-style')) {
-    let widgetStyle = document.createElement('style');
+    widgetStyle = document.createElement('style');
     widgetStyle.id = 'rtl-widget-style';
     widgetStyle.innerHTML = `
         .rtl-widget-container {
@@ -370,7 +373,7 @@ document.addEventListener('keydown', (e) => {
 }, { capture: true });
 
 // Floating widget for Claude RTL
-const widgetWrapper = document.createElement('div');
+widgetWrapper = document.createElement('div');
 widgetWrapper.className = 'rtl-widget-container';
 widgetWrapper.innerHTML = `
       <div class="rtl-widget-trigger">
@@ -539,3 +542,14 @@ lhResetBtn.addEventListener('click', () => {
     saveConfig();
     updateDynamicCSS();
 });
+
+// Self-healing interval to keep widget and style in DOM (resists React DOM wipes)
+setInterval(() => {
+    if (!document.getElementById('rtl-widget-style') && widgetStyle) {
+        safeInject(widgetStyle, 'head');
+    }
+    if (!document.querySelector('.rtl-widget-container') && widgetWrapper) {
+        console.log("[RTL Patcher] Self-healing re-injected widgetWrapper");
+        safeInject(widgetWrapper, 'body');
+    }
+}, 1000);
