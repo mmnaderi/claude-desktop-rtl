@@ -1,6 +1,6 @@
 {
   "name": "claude-rtl",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A smart RTL (Right-to-Left) patcher with UI settings for the Claude application.",
   "main": "./bin/index.js",
   "bin": {

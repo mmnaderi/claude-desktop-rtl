@@ -22,59 +22,15 @@ function printBanner() {
     try {
         const fullArt = figlet.textSync('Claude RTL', { font: 'RubiFont' }).split('\n');
 
-        // Terracotta / Clay theme gradient colors (brand aligned)
-        const hexColors = [
-            '#D97757',
-            '#E28A6D',
-            '#EB9D83',
-            '#F0AC95',
-            '#F5C4B4',
-            '#FADBCF'
-        ];
-
-        // Parse hex to RGB
-        const colors = hexColors.map(hex => {
-            const bigint = parseInt(hex.replace('#', ''), 16);
-            return {
-                r: (bigint >> 16) & 255,
-                g: (bigint >> 8) & 255,
-                b: bigint & 255
-            };
-        });
-
-        const applyGradient = (text) => {
-            let result = '';
-            const len = text.length;
-            for (let i = 0; i < len; i++) {
-                const char = text[i];
-                if (char === ' ' || char === '\n') {
-                    result += char;
-                    continue;
-                }
-                const factor = len > 1 ? i / (len - 1) : 0;
-                
-                // Find current segment in the multi-color transition
-                const segments = colors.length - 1;
-                const segmentFloat = factor * segments;
-                const segmentIdx = Math.min(Math.floor(segmentFloat), segments - 1);
-                const segmentFactor = segmentFloat - segmentIdx;
-
-                const cStart = colors[segmentIdx];
-                const cEnd = colors[segmentIdx + 1];
-
-                const r = Math.round(cStart.r + segmentFactor * (cEnd.r - cStart.r));
-                const g = Math.round(cStart.g + segmentFactor * (cEnd.g - cStart.g));
-                const b = Math.round(cStart.b + segmentFactor * (cEnd.b - cStart.b));
-
-                result += `\x1b[38;2;${r};${g};${b}m${char}\x1b[0m`;
-            }
-            return result;
-        };
+        // Claude's official brand terracotta color (#D97757 -> RGB: 217, 119, 87)
+        const r = 217, g = 119, b = 87;
+        const colorPrefix = `\x1b[38;2;${r};${g};${b}m`;
+        const colorSuffix = '\x1b[0m';
 
         console.log('');
         for (const line of fullArt) {
             if (!line.trim()) continue;
-            console.log(applyGradient(line));
+            console.log(colorPrefix + line + colorSuffix);
         }
         console.log('');
         console.log(`\x1b[2m  RTL & UI Patcher for Claude Desktop | ${pkg.version}\x1b[0m\n`);
