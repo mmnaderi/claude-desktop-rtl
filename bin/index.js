@@ -20,7 +20,7 @@ const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
 
 function printBanner() {
     try {
-        const fullArt = figlet.textSync('Claude RTL', { font: 'RubiFont' }).split('\n');
+        const fullArt = figlet.textSync('Claude RTL', { font: 'ANSI Regular' }).split('\n');
 
         // Claude's official brand terracotta color (#D97757 -> RGB: 217, 119, 87)
         const r = 217, g = 119, b = 87;
@@ -67,12 +67,111 @@ function getDefaultPath() {
     }
 }
 
+function getStorePath() {
+    if (os.platform() !== 'win32') return null;
+    try {
+        const stdout = execSync(
+            'powershell -Command "Get-AppxPackage *Claude* | Select-Object -ExpandProperty InstallLocation"',
+            { stdio: ['ignore', 'pipe', 'ignore'], timeout: 3000 }
+        );
+        const installDir = stdout.toString().trim();
+        if (installDir) {
+            const possiblePaths = [
+                path.join(installDir, 'app', 'resources', 'app.asar'),
+                path.join(installDir, 'resources', 'app.asar')
+            ];
+            for (const p of possiblePaths) {
+                if (fs.existsSync(p)) {
+                    return p;
+                }
+            }
+        }
+    } catch (e) {
+        // PowerShell command failed or package not found
+    }
+    return null;
+}
+
+function makeWritableRecursively(dir) {
+    if (!fs.existsSync(dir)) return;
+    try {
+        const stats = fs.statSync(dir);
+        if (stats.isDirectory()) {
+            fs.chmodSync(dir, 0o777);
+            const files = fs.readdirSync(dir);
+            for (const file of files) {
+                makeWritableRecursively(path.join(dir, file));
+            }
+        } else {
+            fs.chmodSync(dir, 0o666);
+        }
+    } catch (e) {
+        // Ignore permission errors if files cannot be modified
+    }
+}
+
+function findExecutable(dir) {
+    if (!fs.existsSync(dir)) return null;
+    try {
+        const files = fs.readdirSync(dir);
+        // 1. Look for Claude.exe (case-insensitive)
+        const claudeExe = files.find(f => f.toLowerCase() === 'claude.exe');
+        if (claudeExe) return path.join(dir, claudeExe);
+
+        // 2. Look for any other .exe files, ignoring common helpers
+        const exes = files.filter(f => {
+            const name = f.toLowerCase();
+            return name.endsWith('.exe') &&
+                !name.includes('helper') &&
+                !name.includes('uninstall') &&
+                !name.includes('elevate');
+        });
+        if (exes.length > 0) {
+            return path.join(dir, exes[0]);
+        }
+
+        // 3. Fallback to any .exe
+        const anyExe = files.find(f => f.toLowerCase().endsWith('.exe'));
+        return anyExe ? path.join(dir, anyExe) : null;
+    } catch (e) {
+        return null;
+    }
+}
+
+function createWindowsShortcut(exePath, destDir) {
+    try {
+        const desktopPath = path.join(os.homedir(), 'Desktop');
+        const shortcutPath = path.join(desktopPath, 'Claude (Patched).lnk');
+
+        // Normalize paths for Windows shells
+        const normShortcutPath = shortcutPath.replace(/\//g, '\\');
+        const normExePath = exePath.replace(/\//g, '\\');
+        const normDestDir = destDir.replace(/\//g, '\\');
+
+        const script = `$WshShell = New-Object -ComObject WScript.Shell; $Shortcut = $WshShell.CreateShortcut('${normShortcutPath}'); $Shortcut.TargetPath = '${normExePath}'; $Shortcut.WorkingDirectory = '${normDestDir}'; $Shortcut.Save();`;
+        // Escape single quotes for PowerShell
+        const escapedScript = script.replace(/'/g, "''");
+
+        execSync(`powershell -Command "${escapedScript}"`, { stdio: 'ignore' });
+        return shortcutPath;
+    } catch (e) {
+        return null;
+    }
+}
+
 async function getAsarPath() {
     let asarPath = getDefaultPath();
     if (fs.existsSync(asarPath)) {
         console.log(blue(`ℹ Found Claude Desktop installation at:`));
         console.log(`  ${asarPath}\n`);
-        return asarPath;
+        return { path: asarPath, isStore: false };
+    }
+
+    const storePath = getStorePath();
+    if (storePath) {
+        console.log(blue(`ℹ Found Microsoft Store Claude Desktop installation at:`));
+        console.log(`  ${storePath}\n`);
+        return { path: storePath, isStore: true };
     }
 
     console.log(yellow(`⚠ Could not find Claude Desktop at default location.`));
@@ -82,11 +181,25 @@ async function getAsarPath() {
         message: 'Please enter the full path to app.asar:'
     });
 
-    if (!response.customPath || !fs.existsSync(response.customPath)) {
+    if (!response.customPath) {
         console.error(red('\n✖ Invalid path. Aborting.\n'));
         process.exit(1);
     }
-    return response.customPath;
+
+    // Strip leading and trailing quotes if the user drag-and-dropped the file
+    let cleanPath = response.customPath.trim();
+    if ((cleanPath.startsWith('"') && cleanPath.endsWith('"')) || 
+        (cleanPath.startsWith("'") && cleanPath.endsWith("'"))) {
+        cleanPath = cleanPath.slice(1, -1).trim();
+    }
+
+    const isStore = cleanPath.toLowerCase().includes('windowsapps');
+
+    if (!fs.existsSync(cleanPath)) {
+        console.error(red('\n✖ Invalid path or file does not exist. Aborting.\n'));
+        process.exit(1);
+    }
+    return { path: cleanPath, isStore };
 }
 
 function calculateAsarHeaderHash(filePath) {
@@ -98,47 +211,129 @@ const args = process.argv.slice(2);
 const isRestore = args.includes('--restore');
 
 async function main() {
-    const asarPath = await getAsarPath();
-    const backupPath = asarPath + '.bak';
+    let { path: asarPath, isStore } = await getAsarPath();
+    let workingAsarPath = asarPath;
+    let backupPath = asarPath + '.bak';
     
     const plistPath = os.platform() === 'darwin' ? path.join(path.dirname(asarPath), '..', 'Info.plist') : null;
     const plistBackupPath = plistPath ? plistPath + '.bak' : null;
 
     if (isRestore) {
-        if (!fs.existsSync(backupPath)) {
-            console.error(red('✖ No backup found to restore.\n'));
-            process.exit(1);
-        }
-        const spinner = ora('Restoring original files...').start();
-        try {
-            fs.copyFileSync(backupPath, asarPath);
-            fs.rmSync(backupPath);
+        if (isStore) {
+            const storeDestDir = path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Claude-Patched');
+            const shortcutPath = path.join(os.homedir(), 'Desktop', 'Claude (Patched).lnk');
+            const spinner = ora('Removing patched Claude copy...').start();
+            try {
+                if (fs.existsSync(storeDestDir)) {
+                    fs.rmSync(storeDestDir, { recursive: true, force: true });
+                }
+                if (fs.existsSync(shortcutPath)) {
+                    fs.rmSync(shortcutPath, { force: true });
+                }
+                spinner.succeed('Successfully removed patched Claude copy!\n');
+                process.exit(0);
+            } catch (e) {
+                spinner.fail('Failed to remove patched copy.');
+                console.error(red(e.message));
+                process.exit(1);
+            }
+        } else {
+            if (!fs.existsSync(backupPath)) {
+                console.error(red('✖ No backup found to restore.\n'));
+                process.exit(1);
+            }
+            const spinner = ora('Restoring original files...').start();
+            try {
+                fs.copyFileSync(backupPath, asarPath);
+                fs.rmSync(backupPath);
 
-            if (plistBackupPath && fs.existsSync(plistBackupPath)) {
-                fs.copyFileSync(plistBackupPath, plistPath);
-                fs.rmSync(plistBackupPath);
+                if (plistBackupPath && fs.existsSync(plistBackupPath)) {
+                    fs.copyFileSync(plistBackupPath, plistPath);
+                    fs.rmSync(plistBackupPath);
+                }
+
+                spinner.succeed('Successfully restored original Claude Desktop!\n');
+                process.exit(0);
+            } catch (e) {
+                spinner.fail('Failed to restore.');
+                console.error(red(e.message));
+                handleMacPermissionError(e);
+                process.exit(1);
+            }
+        }
+    }
+
+    if (isStore) {
+        console.log(red('\n⚠️  Microsoft Store Version Detected!'));
+        console.log(yellow('Due to Windows security and package integrity restrictions,'));
+        console.log(yellow('applications installed from the Microsoft Store cannot be patched directly.\n'));
+        console.log(cyan('RECOMMENDED APPROACH:'));
+        console.log(cyan('  1. Uninstall the Microsoft Store version of Claude.'));
+        console.log(cyan('  2. Download and install the standalone version from: https://claude.ai/download'));
+        console.log(cyan('     (This version auto-updates and can be patched without Administrator rights.)\n'));
+        console.log(yellow('WORKAROUND APPROACH:'));
+        console.log(yellow('  The patcher can copy Claude to your user directory, patch it there,'));
+        console.log(yellow('  and create a desktop shortcut named "Claude (Patched)".'));
+        console.log(yellow('  NOTE: This copy will NOT receive automatic updates from the Microsoft Store.'));
+        console.log(yellow('        It will also take an extra ~200MB of disk space.\n'));
+
+        const choice = await prompts({
+            type: 'select',
+            name: 'action',
+            message: 'How would you like to proceed?',
+            choices: [
+                { title: 'Abort & download standalone version (Recommended)', value: 'abort' },
+                { title: 'Proceed anyway with the local copy workaround', value: 'proceed' }
+            ],
+            initial: 0
+        });
+
+        if (!choice.action || choice.action === 'abort') {
+            console.log(blue('\nAborted. Please install the standalone version and try again.\n'));
+            process.exit(0);
+        }
+
+        console.log(cyan('\nℹ Working on a local copy to bypass WindowsApps restrictions...'));
+        const storeDestDir = path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Claude-Patched');
+        const appDir = path.dirname(path.dirname(asarPath));
+
+        const copySpinner = ora('Copying Claude to user directory (this may take a few seconds)...').start();
+        try {
+            if (fs.existsSync(storeDestDir)) {
+                fs.rmSync(storeDestDir, { recursive: true, force: true });
+            }
+            fs.mkdirSync(storeDestDir, { recursive: true });
+            if (typeof fs.cpSync === 'function') {
+                fs.cpSync(appDir, storeDestDir, { recursive: true });
+            } else {
+                execSync(`xcopy "${appDir}" "${storeDestDir}" /E /I /H /Y`, { stdio: 'ignore' });
             }
 
-            spinner.succeed('Successfully restored original Claude Desktop!\n');
-            process.exit(0);
+            // Remove read-only attributes from the copied files
+            makeWritableRecursively(storeDestDir);
+
+            copySpinner.succeed('Claude application files successfully copied to user directory.');
+            
+            // Adjust paths to point to the local copy
+            workingAsarPath = path.join(storeDestDir, 'resources', 'app.asar');
+            backupPath = workingAsarPath + '.bak';
         } catch (e) {
-            spinner.fail('Failed to restore.');
+            copySpinner.fail('Failed to copy application files.');
             console.error(red(e.message));
-            handleMacPermissionError(e);
             process.exit(1);
         }
     }
 
     const spinner = ora('Checking permissions and backing up...').start();
     try {
-        fs.accessSync(path.dirname(asarPath), fs.constants.W_OK);
+        fs.accessSync(path.dirname(workingAsarPath), fs.constants.W_OK);
         if (plistPath) {
             fs.accessSync(plistPath, fs.constants.W_OK);
         }
 
         // Backup app.asar
         if (!fs.existsSync(backupPath)) {
-            fs.copyFileSync(asarPath, backupPath);
+            fs.copyFileSync(workingAsarPath, backupPath);
         }
 
         // Backup Info.plist on macOS
@@ -158,13 +353,13 @@ async function main() {
         process.exit(1);
     }
     
-    const extractDir = path.join(path.dirname(asarPath), 'app-extracted-claude-rtl-temp');
+    const extractDir = path.join(path.dirname(workingAsarPath), 'app-extracted-claude-rtl-temp');
     spinner.text = 'Extracting app.asar (this may take a few seconds)...';
     try {
         if (fs.existsSync(extractDir)) {
             fs.rmSync(extractDir, { recursive: true, force: true });
         }
-        asar.extractAll(asarPath, extractDir);
+        asar.extractAll(workingAsarPath, extractDir);
     } catch (e) {
         spinner.fail('Failed to extract ASAR.');
         console.error(red(e.message));
@@ -366,7 +561,7 @@ try {
 
     spinner.text = 'Repacking app.asar...';
     try {
-        await asar.createPackage(extractDir, asarPath);
+        await asar.createPackage(extractDir, workingAsarPath);
         fs.rmSync(extractDir, { recursive: true, force: true });
     } catch (e) {
         spinner.fail('Failed to repack ASAR.');
@@ -378,7 +573,7 @@ try {
     if (plistPath && fs.existsSync(plistPath)) {
         spinner.text = 'Updating Info.plist ASAR Integrity hash...';
         try {
-            const calculatedHash = calculateAsarHeaderHash(asarPath);
+            const calculatedHash = calculateAsarHeaderHash(workingAsarPath);
             let plistContent = fs.readFileSync(plistPath, 'utf8');
             const hashRegex = /(<key>Resources\/app\.asar<\/key>[\s\S]*?<key>hash<\/key>\s*<string>)([a-f0-9]+)(<\/string>)/;
             
@@ -391,7 +586,7 @@ try {
 
             // Re-sign application to fix macOS gatekeeper/signature checks
             spinner.text = 'Re-signing Claude.app...';
-            const appPath = path.join(path.dirname(asarPath), '../..');
+            const appPath = path.join(path.dirname(workingAsarPath), '../..');
             execSync(`codesign --force --deep --sign - "${appPath}"`);
             
         } catch (e) {
@@ -402,7 +597,24 @@ try {
     }
 
     spinner.succeed('Successfully patched Claude Desktop!');
-    console.log(green('\n✨ RTL Features and DevTools have been enabled. Please restart Claude Desktop to see the changes.\n'));
+    
+    if (isStore) {
+        const storeDestDir = path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Claude-Patched');
+        const exePath = findExecutable(storeDestDir);
+        if (exePath) {
+            const shortcutPath = createWindowsShortcut(exePath, storeDestDir);
+            if (shortcutPath) {
+                console.log(green(`✔ Created a desktop shortcut at: ${shortcutPath}`));
+            }
+            console.log(green(`\n✨ Patched Claude is ready! You can run it from the desktop shortcut or:`));
+            console.log(cyan(`  ${exePath}\n`));
+        } else {
+            console.log(green(`\n✨ Patched Claude is ready in:`));
+            console.log(cyan(`  ${storeDestDir}\n`));
+        }
+    } else {
+        console.log(green('\n✨ RTL Features and DevTools have been enabled. Please restart Claude Desktop to see the changes.\n'));
+    }
 }
 
 main().catch(e => {
