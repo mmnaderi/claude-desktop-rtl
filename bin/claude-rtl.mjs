@@ -37,6 +37,8 @@ async function install() {
   const plist = path.join(DEST, 'Contents/Info.plist');
   const pb = (c) => { try { run('/usr/libexec/PlistBuddy', ['-c', c, plist]); } catch {} };
   pb('Delete :CFBundleIconName'); // otherwise the asset-catalog icon wins
+  // A distinct bundle ID makes notification clicks and deep links open this copy, not /Applications/Claude.app.
+  pb('Set :CFBundleIdentifier com.anthropic.claudefordesktop.rtl');
   pb('Add :CFBundleDisplayName string Claude-RTL');
   pb('Set :CFBundleDisplayName Claude-RTL');
 

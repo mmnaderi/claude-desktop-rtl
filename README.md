@@ -9,7 +9,7 @@ node bin/claude-rtl.mjs --uninstall  # delete it
 npm test
 ```
 
-Quit Claude before opening Claude-RTL (same profile, single instance). Re-run after each Claude update; the copy does not auto-update. Expect one Keychain prompt on first launch (new signature).
+Quit Claude before opening Claude-RTL (same profile, single instance). Re-run after each Claude update; the copy does not auto-update. Expect one Keychain prompt on first launch (new signature), and macOS will ask for notification permission again: the copy has its own bundle ID (`com.anthropic.claudefordesktop.rtl`) so notification clicks open Claude-RTL, not Claude.
 
 ## What it does
 
