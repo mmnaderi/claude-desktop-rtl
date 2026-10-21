@@ -8,7 +8,7 @@
   const INPUTS = '[contenteditable="true"], [contenteditable="true"] p, textarea';
   const FONT_B64 = '__FONT_B64__';
   const KEY = 'claude-rtl';
-  const DEFAULTS = { enabled: true, force: false, font: 'vazir', custom: '', lineHeight: 0, lock: false, layout: null };
+  const DEFAULTS = { enabled: true, force: false, font: 'vazir', custom: '', lineHeight: 0, lock: false, layout: null, keys: true };
 
   let wf; try { wf = require('electron').webFrame; } catch (_) {}
   let st = { ...DEFAULTS };
@@ -192,6 +192,8 @@
         <span class="text-footnote text-muted">Line height <span data-k="lhLabel"></span></span>
         <input type="range" data-k="lineHeight" min="0" max="2.4" step="0.1" />
       </div>
+      ${SEP}
+      ${toggleRow('keys', 'Model & effort shortcuts', 'Alt+1–4 model · Alt+0,9,8,7,6,5 effort')}
       ${SEP}
       ${toggleRow('lock', 'Lock layout', 'Reopen saved panes and sizes in every session')}
       <div class="crtl-sub compact:px-2 comfortable:px-2.5">
@@ -554,7 +556,7 @@
     addEventListener('resize', () => panel && !panel.hidden && placePanel());
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && e.isTrusted && panel && !panel.hidden) togglePanel(false);
-      if (e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && (MODELS[e.code] || EFFORTS[e.code])) {
+      if (st.keys && e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && (MODELS[e.code] || EFFORTS[e.code])) {
         e.preventDefault();
         MODELS[e.code] ? pickModel(MODELS[e.code]) : pickEffort(EFFORTS[e.code]);
       }

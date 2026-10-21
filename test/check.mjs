@@ -27,6 +27,12 @@ assert.equal(d('en'), 'rtl', 'force RTL');
 assert.equal(d('native'), 'rtl', 'force overrides native dir');
 panel.querySelector('[data-key=force]').click();
 assert.equal(d('native'), 'ltr', 'native dir restored after force off');
+// The panel switch turns the shortcuts off.
+panel.querySelector('[data-key=keys]').click();
+doc.dispatchEvent(new dom.window.KeyboardEvent('keydown', { code: 'Digit1', altKey: true, bubbles: true }));
+await new Promise((r) => setTimeout(r, 300));
+assert.equal(dom.window.picked, undefined, 'shortcuts off');
+panel.querySelector('[data-key=keys]').click();
 // Alt+1 picks the Haiku entry of Claude's model menu (by data-model-id family, not label or position).
 doc.dispatchEvent(new dom.window.KeyboardEvent('keydown', { code: 'Digit1', altKey: true, bubbles: true }));
 await new Promise((r) => setTimeout(r, 300));
