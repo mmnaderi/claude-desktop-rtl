@@ -1,6 +1,6 @@
 {
   "name": "claude-rtl",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Persian/Arabic/Hebrew RTL for Claude Desktop on macOS, via a patched copy (the original app is never modified).",
   "type": "module",
   "bin": {
