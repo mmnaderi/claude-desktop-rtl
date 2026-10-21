@@ -18,6 +18,7 @@ Quit Claude before opening Claude-RTL (same profile, single instance). Re-run af
 - **Font:** extends Claude's own `anthropic-sans` / `anthropic-serif` families with Vazirmatn (or an installed font) for Arabic-script glyphs only, so Latin keeps Claude's font.
 - **Line height:** overrides Claude's `--cds-leading-prose` / `--_prose-leading` chain for prose containing RTL text.
 - **Titlebar button** opens the settings panel (Smart RTL, Force RTL, font, line height); Alt+R toggles. Settings live in `localStorage`.
+- **Shortcuts:** Alt+1/2/3/4 pick Haiku/Sonnet/Opus/Fable; Alt+0/9/8/7/6/5 pick effort Low/Medium/High/Extra/Max/Ultracode. They drive Claude's own model menu (matched by `data-model-id`), so the menu must exist in the current view. Effort matching is by label prefix and is untested against the real submenu.
 - **Persian keyboard:** Shift+2 types `@`.
 - **DevTools:** writes `developer_settings.json` (same as Help > Enable Developer Mode); right-click > Inspect Element.
 

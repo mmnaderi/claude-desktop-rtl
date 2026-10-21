@@ -15,6 +15,16 @@ const html = `<!doctype html><meta charset=utf-8><body style="font:16px sans-ser
 <p id=inlinecode>متن <code id=ic>foo()</code> کد</p>
 <div id=ed contenteditable="true" dir="ltr"><p id=edp>سلام</p></div>
 </div>
+<button data-cds="ModelSelector" aria-haspopup="menu" aria-expanded="false" id="ms"></button>
+<script>
+ms.addEventListener('mousedown', () => {
+  ms.setAttribute('aria-expanded', 'true');
+  const m = document.createElement('div'); m.setAttribute('role', 'menu'); m.setAttribute('data-cds', 'ModelSelector');
+  m.innerHTML = '<div role="menuitemradio" data-model-id="claude-haiku-5-5">Haiku</div><div role="menuitemradio" data-model-id="claude-opus-5-5">Opus</div>';
+  m.querySelectorAll('[data-model-id]').forEach((i) => i.addEventListener('click', () => { window.picked = i.dataset.modelId; }));
+  document.body.append(m);
+});
+</script>
 <script>${payload.replace(/<\/script>/g, '<\\/script>')}</script>
 <script>setTimeout(()=>{const p=document.createElement('p');p.id='late';p.textContent='پاراگراف دیر رسیده';document.getElementById('chat').append(p)},200)</script>`;
 fs.writeFileSync(new URL('./fixture.html', import.meta.url), html);

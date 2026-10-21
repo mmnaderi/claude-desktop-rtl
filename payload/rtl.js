@@ -252,6 +252,58 @@
     anchor ? anchor.after(btn) : bar.append(btn);
   }
 
+  // ---- Alt+1..4 pick a model, Alt+0/9/8/7/6/5 pick an effort, by driving Claude's own menus ----
+  const MODELS = { Digit1: 'haiku', Digit2: 'sonnet', Digit3: 'opus', Digit4: 'fable' };
+  const EFFORTS = { Digit0: /^low/i, Digit9: /^medium/i, Digit8: /^high/i, Digit7: /^(extra|x-?high)/i, Digit6: /^max/i, Digit5: /^ultra/i };
+
+  function press(el) {
+    const P = window.PointerEvent || MouseEvent;
+    const o = { bubbles: true, cancelable: true, button: 0, view: window, pointerType: 'mouse', isPrimary: true };
+    for (const t of ['pointerover', 'mouseover', 'pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+      el.dispatchEvent(new (t.startsWith('pointer') ? P : MouseEvent)(t, o));
+    }
+  }
+
+  function waitFor(fn, ms = 1200) {
+    return new Promise((resolve) => {
+      const t0 = performance.now();
+      (function tick() {
+        const v = fn();
+        if (v || performance.now() - t0 > ms) return resolve(v || null);
+        requestAnimationFrame(tick);
+      })();
+    });
+  }
+
+  const modelTrigger = () => document.querySelector('[data-cds="ModelSelector"][aria-haspopup="menu"]');
+  const closeMenus = () => document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+  async function openModelMenu() {
+    const trig = modelTrigger();
+    if (!trig) return null;
+    if (trig.getAttribute('aria-expanded') !== 'true') press(trig);
+    return waitFor(() => document.querySelector('[role="menu"][data-cds="ModelSelector"]'));
+  }
+
+  const usable = (el) => el && !el.hasAttribute('data-disabled') && el.getAttribute('aria-disabled') !== 'true';
+
+  async function pickModel(family) {
+    const menu = await openModelMenu();
+    const item = menu && menu.querySelector(`[role="menuitemradio"][data-model-id*="${family}"]`);
+    if (usable(item)) press(item); else closeMenus();
+  }
+
+  async function pickEffort(re) {
+    const menu = await openModelMenu();
+    const row = menu && [...menu.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]')].find((r) => /^effort/i.test(r.textContent.trim()));
+    if (!row) return closeMenus();
+    press(row);
+    row.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', code: 'ArrowRight', bubbles: true }));
+    const item = await waitFor(() => [...document.querySelectorAll('[role="menu"] [role="menuitemradio"]')]
+      .find((i) => !i.hasAttribute('data-model-id') && re.test(i.textContent.trim())));
+    if (usable(item)) { press(item); closeMenus(); } else closeMenus();
+  }
+
   // ---- boot ----
   function start() {
     load();
@@ -274,6 +326,10 @@
     addEventListener('resize', () => panel && !panel.hidden && placePanel());
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && panel && !panel.hidden) togglePanel(false);
+      if (e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && (MODELS[e.code] || EFFORTS[e.code])) {
+        e.preventDefault();
+        MODELS[e.code] ? pickModel(MODELS[e.code]) : pickEffort(EFFORTS[e.code]);
+      }
       if (e.altKey && e.code === 'KeyR') { e.preventDefault(); st.enabled = !st.enabled; refresh(); }
       // Persian layout: Shift+2 yields "٬" instead of "@".
       if (st.enabled && e.shiftKey && e.code === 'Digit2' && e.key === '٬' && !e.metaKey && !e.ctrlKey) {
