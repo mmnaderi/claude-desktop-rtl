@@ -3,6 +3,7 @@ import fs from 'node:fs';
 const payload = fs.readFileSync(new URL('../payload/rtl.js', import.meta.url), 'utf8').replace('__FONT_B64__', '');
 const html = `<!doctype html><meta charset=utf-8><body style="font:16px sans-serif;width:600px">
 <div class="epitaxy-titlebar-end"><button data-cds-icon-only aria-pressed="false" aria-label="Terminal" id="x"><span data-cds="Icon"></span></button><button aria-label="View options"></button></div>
+<div id="dv" data-tile-divider role="separator" aria-orientation="vertical" aria-valuenow="50" aria-label="Resize A and B" tabindex="0"></div>
 <div id=chat>
 <p id=fa>سلام، این یک متن فارسی با کلمه‌ی English وسط آن است.</p>
 <p id=en>This is English with فارسی inside.</p>
@@ -17,6 +18,8 @@ const html = `<!doctype html><meta charset=utf-8><body style="font:16px sans-ser
 </div>
 <button data-cds="ModelSelector" aria-haspopup="menu" aria-expanded="false" id="ms"></button>
 <script>
+document.getElementById('x').addEventListener('click', (e) => e.currentTarget.setAttribute('aria-pressed', e.currentTarget.getAttribute('aria-pressed') !== 'true'));
+document.getElementById('dv').addEventListener('keydown', (e) => { const d = document.getElementById('dv'); const v = +d.getAttribute('aria-valuenow'); d.setAttribute('aria-valuenow', v + (e.key === 'ArrowRight' ? 5 : -5)); });
 ms.addEventListener('mousedown', () => {
   ms.setAttribute('aria-expanded', 'true');
   const m = document.createElement('div'); m.setAttribute('role', 'menu'); m.setAttribute('data-cds', 'ModelSelector');

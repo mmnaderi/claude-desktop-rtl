@@ -8,7 +8,7 @@
   const INPUTS = '[contenteditable="true"], [contenteditable="true"] p, textarea';
   const FONT_B64 = '__FONT_B64__';
   const KEY = 'claude-rtl';
-  const DEFAULTS = { enabled: true, force: false, font: 'vazir', custom: '', lineHeight: 0 };
+  const DEFAULTS = { enabled: true, force: false, font: 'vazir', custom: '', lineHeight: 0, lock: false, layout: null };
 
   let wf; try { wf = require('electron').webFrame; } catch (_) {}
   let st = { ...DEFAULTS };
@@ -49,6 +49,9 @@
   const UI_CSS = `
     [data-crtl-ui] input[type=text], [data-crtl-ui] select { width: 100%; background: transparent; color: inherit; border: 1px solid var(--cds-border, color-mix(in srgb, currentColor 25%, transparent)); border-radius: 6px; padding: 3px 6px; font: inherit; }
     [data-crtl-ui] input[type=range] { width: 100%; }
+    [data-crtl-ui] .crtl-actions { display: flex; gap: 6px; }
+    [data-crtl-ui] .crtl-actions button { flex: 1; background: transparent; color: inherit; border: 1px solid var(--cds-border, color-mix(in srgb, currentColor 25%, transparent)); border-radius: 6px; padding: 3px 6px; font: inherit; cursor: pointer; }
+    [data-crtl-ui] .crtl-actions button:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
     [data-crtl-ui] .crtl-sub { padding-block: 2px 8px; display: flex; flex-direction: column; gap: 6px; }
     ${CODE.replace(', [data-crtl-ui]', '')} { direction: ltr !important; unicode-bidi: isolate !important; text-align: left !important; }
     pre, code { font-family: var(--font-mono, ui-monospace, monospace) !important; }
@@ -188,10 +191,21 @@
         <span class="text-footnote text-muted" data-k="fontStatus"></span>
         <span class="text-footnote text-muted">Line height <span data-k="lhLabel"></span></span>
         <input type="range" data-k="lineHeight" min="0" max="2.4" step="0.1" />
+      </div>
+      ${SEP}
+      ${toggleRow('lock', 'Lock layout', 'Reopen saved panes and sizes in every session')}
+      <div class="crtl-sub compact:px-2 comfortable:px-2.5">
+        <div class="crtl-actions"><button type="button" data-act="save">Save current</button><button type="button" data-act="apply">Apply now</button></div>
+        <span class="text-footnote text-muted" data-k="layoutStatus"></span>
       </div></div></div>`;
     panel.addEventListener('click', (e) => {
+      const act = e.target.closest('[data-act]');
+      if (act) return act.dataset.act === 'save' ? saveLayout() : applyLayout();
       const row = e.target.closest('[data-key]');
-      if (row) { st[row.dataset.key] = !st[row.dataset.key]; refresh(); }
+      if (row) {
+        st[row.dataset.key] = !st[row.dataset.key]; refresh();
+        if (row.dataset.key === 'lock' && st.lock && st.layout) applyLayout();
+      }
     });
     panel.addEventListener('mouseover', (e) => {
       const row = e.target.closest('[data-key]');
@@ -264,6 +278,23 @@
     }
   }
 
+  // Base UI opens menus on pointer-down; a following click with detail 0 counts as a keyboard click and toggles it shut.
+  function pressDown(el) {
+    const P = window.PointerEvent || MouseEvent;
+    const o = { bubbles: true, cancelable: true, button: 0, buttons: 1, view: window, pointerType: 'mouse', isPrimary: true };
+    for (const t of ['pointerover', 'mouseover', 'pointerdown', 'mousedown', 'pointerup', 'mouseup']) {
+      el.dispatchEvent(new (t.startsWith('pointer') ? P : MouseEvent)(t, o));
+    }
+  }
+
+  async function openMenu(trig, menuSel) {
+    if (trig.getAttribute('aria-expanded') !== 'true') {
+      pressDown(trig);
+      if (!(await waitFor(() => trig.getAttribute('aria-expanded') === 'true', 500))) press(trig);
+    }
+    return waitFor(menuSel);
+  }
+
   function waitFor(fn, ms = 1200) {
     return new Promise((resolve) => {
       const t0 = performance.now();
@@ -281,8 +312,7 @@
   async function openModelMenu() {
     const trig = modelTrigger();
     if (!trig) return null;
-    if (trig.getAttribute('aria-expanded') !== 'true') press(trig);
-    return waitFor(() => document.querySelector('[role="menu"][data-cds="ModelSelector"]'));
+    return openMenu(trig, () => document.querySelector('[role="menu"][data-cds="ModelSelector"]'));
   }
 
   const usable = (el) => el && !el.hasAttribute('data-disabled') && el.getAttribute('aria-disabled') !== 'true';
@@ -304,6 +334,203 @@
     if (usable(item)) { press(item); closeMenus(); } else closeMenus();
   }
 
+  // ---- Layout lock: reopen the same panes and split sizes in every session ----
+  // Claude keeps pane layout per session in memory, so we drive its own controls: titlebar toggles,
+  // the "Side chat" menu item, and the aria-valuenow splitters (role=separator, data-tile-divider).
+  const PANES = ['Terminal', 'Changes', 'Browser', 'Files'];
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const bar = () => document.querySelector('.epitaxy-titlebar-end');
+  const paneBtn = (label) => bar() && bar().querySelector(`button[aria-label="${label}"]`);
+  const dividers = () => [...document.querySelectorAll('[data-tile-divider]')];
+  const pressed = (b) => b.getAttribute('aria-pressed') === 'true';
+
+  function setLayoutStatus(msg) {
+    const el = panel && panel.querySelector('[data-k="layoutStatus"]');
+    if (el) el.textContent = msg;
+  }
+
+  async function sideChatItem() {
+    const trig = document.querySelector('button[aria-label="View options"]');
+    if (!trig) return null;
+    return openMenu(trig, () => [...document.querySelectorAll('[role="menuitemcheckbox"]')].find((i) => /^side chat/i.test(i.textContent.trim())));
+  }
+
+  const sideChatOpen = () => dividers().some((d) => /side chat/i.test(d.getAttribute('aria-label') || ''));
+
+  // Tries ⌘; first, then the View options menu (pointer, then keyboard). `trace` says which step failed.
+  async function setSideChat(want, trace = []) {
+    if (sideChatOpen() === want) return true;
+    const key = (type, init) => document.dispatchEvent(new KeyboardEvent(type, { bubbles: true, cancelable: true, ...init }));
+    key('keydown', { key: ';', code: 'Semicolon', metaKey: true }); key('keyup', { key: ';', code: 'Semicolon', metaKey: true });
+    if (await waitFor(() => sideChatOpen() === want, 600)) return true;
+    trace.push('shortcut✗');
+    const item = await sideChatItem();
+    if (!item) { trace.push('menu✗'); closeMenus(); return false; }
+    trace.push('menu✓');
+    if ((item.getAttribute('aria-checked') === 'true') === want) { trace.push('item already ' + want); closeMenus(); return false; }
+    press(item);
+    if (await waitFor(() => sideChatOpen() === want, 800)) return true;
+    trace.push('click✗');
+    if (item.isConnected) {
+      item.focus();
+      for (const t of ['keydown', 'keyup']) item.dispatchEvent(new KeyboardEvent(t, { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true }));
+      if (await waitFor(() => sideChatOpen() === want, 800)) return true;
+      trace.push('enter✗');
+    }
+    closeMenus();
+    return false;
+  }
+
+  // Claude persists each session's pane tree (columns, order, flex widths) here; we save and re-inject the whole tree.
+  const STORE = 'epitaxy.sidePaneStore.v1';
+  const activeSession = () => { try { return JSON.parse(localStorage.getItem('desktop-frame.paneStore.v1')).state.lastPrimaryCodeSession.id; } catch (_) { return null; } };
+  const readTree = () => { try { return JSON.parse(localStorage.getItem(STORE)).state.tileLayout || null; } catch (_) { return null; } };
+
+  function injectTree(tree) {
+    try {
+      const raw = localStorage.getItem(STORE), obj = JSON.parse(raw), id = activeSession();
+      localStorage.setItem('claude-rtl-backup', raw); // previous value, in case an injection misbehaves
+      obj.state.tileLayout = JSON.parse(JSON.stringify(tree));
+      if (id && obj.state.tileLayoutBySession) obj.state.tileLayoutBySession[id] = JSON.parse(JSON.stringify(tree));
+      const next = JSON.stringify(obj);
+      localStorage.setItem(STORE, next);
+      window.dispatchEvent(new StorageEvent('storage', { key: STORE, oldValue: raw, newValue: next, url: location.href, storageArea: localStorage }));
+      return true;
+    } catch (_) { return false; }
+  }
+
+  // Structure + rough widths, so tiny float noise does not trigger a reload.
+  function treeSig(t) {
+    const walk = (n) => (n.kind === 'tile' ? `${n.tileId}:${(+n.flex).toFixed(1)}` : `${n.direction}(${n.children.map(walk).join(',')})`);
+    try { return walk(t.root); } catch (_) { return ''; }
+  }
+
+  async function saveLayout() {
+    const panes = {};
+    for (const l of PANES) { const b = paneBtn(l); if (b && b.hasAttribute('aria-pressed')) panes[l] = pressed(b); }
+    if (!Object.keys(panes).length) return setLayoutStatus('Nothing to save: open a session first');
+    panes['Side chat'] = sideChatOpen();
+    const ds = dividers().map((d) => ({ label: d.getAttribute('aria-label'), value: +d.getAttribute('aria-valuenow') }));
+    st.layout = { panes, dividers: ds, tree: readTree() };
+    save();
+    const open = Object.keys(panes).filter((k) => panes[k]);
+    setLayoutStatus(`Saved: ${open.join(', ') || 'chat only'} · ${ds.length} splitter(s)${st.layout.tree ? ' · full tree' : ''}`);
+  }
+
+  // Returns {ok, how}. Tries the keyboard splitter pattern, then self-calibrating pointer drags.
+  async function setDivider(label, target) {
+    const find = () => dividers().find((d) => d.getAttribute('aria-label') === label);
+    const val = () => +(find() ? find().getAttribute('aria-valuenow') : NaN);
+    const near = () => Math.abs(val() - target) <= 1.5;
+    if (!find()) return { ok: false, how: 'missing' };
+    if (near()) return { ok: true, how: 'already' };
+    const vert = find().getAttribute('aria-orientation') === 'vertical';
+    const start = val();
+
+    find().focus();
+    for (let i = 0; i < 60 && !near(); i++) {
+      const before = val(), up = target > before;
+      const key = up ? (vert ? 'ArrowRight' : 'ArrowDown') : (vert ? 'ArrowLeft' : 'ArrowUp');
+      find().dispatchEvent(new KeyboardEvent('keydown', { key, code: key, bubbles: true, cancelable: true }));
+      await sleep(70);
+      const after = val();
+      if (after === before || (up ? after > target + 1.5 : after < target - 1.5)) break;
+    }
+    if (near()) return { ok: true, how: 'keys' };
+
+    const P = window.PointerEvent || MouseEvent;
+    const drag = async (px) => {
+      const el = find(), r = el.getBoundingClientRect();
+      const x0 = r.x + r.width / 2, y0 = r.y + r.height / 2;
+      const at = (k) => (vert ? [x0 + (px * k) / 8, y0] : [x0, y0 + (px * k) / 8]);
+      const fire = (t, [x, y]) => { try { el.dispatchEvent(new (t.startsWith('pointer') ? P : MouseEvent)(t, {
+        bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0, buttons: t.endsWith('up') ? 0 : 1,
+        pointerId: 1, pointerType: 'mouse', isPrimary: true, view: window })); } catch (_) {} };
+      fire('pointerdown', at(0)); fire('mousedown', at(0));
+      for (let k = 1; k <= 8; k++) { fire('pointermove', at(k)); fire('mousemove', at(k)); await sleep(16); }
+      fire('pointerup', at(8)); fire('mouseup', at(8));
+      await sleep(150);
+    };
+    const probe = vert ? 40 : 30, v0 = val();
+    await drag(probe);
+    const perPx = (val() - v0) / probe; // percent per pixel, signed
+    if (!perPx) return { ok: false, how: `no effect from keys or drag (${start}%)` };
+    for (let i = 0; i < 3 && !near(); i++) await drag((target - val()) / perPx);
+    return { ok: near(), how: `drag ${start}→${val()}` };
+  }
+
+  let applying = false;
+  async function applyLayout() {
+    const L = st.layout;
+    if (!L || applying) return;
+    applying = true;
+    try {
+      if (!(await waitFor(() => bar() && bar().querySelector('button[aria-pressed]'), 5000))) return setLayoutStatus('Titlebar not found');
+      for (const [label, want] of Object.entries(L.panes)) {
+        if (label === 'Side chat') continue;
+        const b = paneBtn(label);
+        if (b && b.hasAttribute('aria-pressed') && pressed(b) !== want) { press(b); await sleep(150); }
+      }
+      let sc = '';
+      if (L.tree && treeSig(readTree()) !== treeSig(L.tree)) {
+        // The app keeps its layout in memory and ignores storage events, so write the tree and reload once to adopt it.
+        const tag = sessionKey();
+        let last = '';
+        try { last = sessionStorage.getItem('claude-rtl-reload') || ''; } catch (_) {}
+        const [lastTag, lastAt] = [last.slice(0, last.lastIndexOf('@')), +last.slice(last.lastIndexOf('@') + 1)];
+        if (lastTag === tag && Date.now() - lastAt < 20000) {
+          setLayoutStatus('Reloaded, but Claude did not adopt the saved layout; used buttons instead');
+        } else if (injectTree(L.tree)) {
+          try { sessionStorage.setItem('claude-rtl-reload', `${tag}@${Date.now()}`); } catch (_) {}
+          setLayoutStatus('Layout written · reloading…');
+          return (globalThis.__claudeRtlReload || (() => location.reload()))();
+        }
+      }
+      if (typeof L.panes['Side chat'] === 'boolean') {
+        const trace = [];
+        if (!(await setSideChat(L.panes['Side chat'], trace))) sc = ` · Side chat failed (${trace.join(' ')})`;
+      }
+      await sleep(500);
+      // Claude may still be laying out (animations, late default sizes), so re-check and re-apply drifted splitters.
+      const run = async () => {
+        const out = [];
+        for (const d of L.dividers) out.push([d.label, d.value, await setDivider(d.label, d.value)]);
+        return out;
+      };
+      // Neighbouring splitters share a pane, so moving one shifts the ratio of the next; iterate until stable.
+      const settled = () => L.dividers.every((d) => { const el = dividers().find((x) => x.getAttribute('aria-label') === d.label); return el && Math.abs(+el.getAttribute('aria-valuenow') - d.value) <= 1.5; });
+      let res = await run();
+      for (let i = 0; i < 5 && !settled(); i++) res = await run();
+      for (let i = 0; i < 2; i++) {
+        await sleep(1200);
+        const drift = L.dividers.filter((d) => {
+          const el = dividers().find((x) => x.getAttribute('aria-label') === d.label);
+          return el && Math.abs(+el.getAttribute('aria-valuenow') - d.value) > 1.5;
+        });
+        if (!drift.length) break;
+        res = await run();
+      }
+      const now = (l) => { const el = dividers().find((x) => x.getAttribute('aria-label') === l); return el ? Math.round(el.getAttribute('aria-valuenow')) : '?'; };
+      const short = (l) => l.replace(/^Resize /, '').replace(/ and /g, '|');
+      console.log('[claude-rtl] layout', res.map(([l, w, r]) => `${l}: want ${w}, now ${now(l)} (${r.how})`));
+      const good = res.filter(([l, w]) => Math.abs(now(l) - w) <= 1.5).length;
+      setLayoutStatus(`Applied · splitters ${good}/${res.length}${sc} · ` + res.map(([l, w]) => `${short(l)} ${now(l)}/${w}`).join(' · '));
+    } finally { applying = false; }
+  }
+
+  // Claude records the active session id in its pane store; the URL alone may not change between sessions.
+  let lastKey = '', applyTimer = 0;
+  function sessionKey() {
+    try { return (JSON.parse(localStorage.getItem('desktop-frame.paneStore.v1')).state.lastPrimaryCodeSession || {}).id + '|' + location.href; }
+    catch (_) { return location.href; }
+  }
+  function checkSession() {
+    const k = sessionKey();
+    if (k === lastKey) return;
+    lastKey = k;
+    if (st.enabled && st.lock && st.layout) { clearTimeout(applyTimer); applyTimer = setTimeout(applyLayout, 700); }
+  }
+
   // ---- boot ----
   function start() {
     load();
@@ -311,21 +538,22 @@
     applyCss();
     mark(document.body);
     ensureButton();
+    checkSession();
     addEventListener('load', () => setTimeout(applyFont, 1500));
 
     let queue = new Set(), raf = 0;
     new MutationObserver((muts) => {
       for (const m of muts) m.addedNodes.forEach((n) => n.nodeType === 1 && queue.add(n));
       if (raf) return;
-      raf = requestAnimationFrame(() => { raf = 0; const q = queue; queue = new Set(); q.forEach(mark); ensureButton(); try { adopt(); } catch (_) {} });
+      raf = requestAnimationFrame(() => { raf = 0; const q = queue; queue = new Set(); q.forEach(mark); ensureButton(); checkSession(); try { adopt(); } catch (_) {} });
     }).observe(document.body, { childList: true, subtree: true });
 
     document.addEventListener('click', (e) => {
-      if (panel && !panel.hidden && !e.target.closest('[data-crtl-ui]')) togglePanel(false);
+      if (e.isTrusted && panel && !panel.hidden && !e.target.closest('[data-crtl-ui]')) togglePanel(false);
     }, true);
     addEventListener('resize', () => panel && !panel.hidden && placePanel());
     document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && panel && !panel.hidden) togglePanel(false);
+      if (e.key === 'Escape' && e.isTrusted && panel && !panel.hidden) togglePanel(false);
       if (e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && (MODELS[e.code] || EFFORTS[e.code])) {
         e.preventDefault();
         MODELS[e.code] ? pickModel(MODELS[e.code]) : pickEffort(EFFORTS[e.code]);

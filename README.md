@@ -19,6 +19,7 @@ Quit Claude before opening Claude-RTL (same profile, single instance). Re-run af
 - **Line height:** overrides Claude's `--cds-leading-prose` / `--_prose-leading` chain for prose containing RTL text.
 - **Titlebar button** opens the settings panel (Smart RTL, Force RTL, font, line height); Alt+R toggles. Settings live in `localStorage`.
 - **Shortcuts:** Alt+1/2/3/4 pick Haiku/Sonnet/Opus/Fable; Alt+0/9/8/7/6/5 pick effort Low/Medium/High/Extra/Max/Ultracode. They drive Claude's own model menu (matched by `data-model-id`), so the menu must exist in the current view. Effort matching is by label prefix and is untested against the real submenu.
+- **Layout lock:** save the current pane layout (open panes, columns, widths) once; with **Lock layout** on, every session you open gets it. Claude keeps the layout tree in `localStorage` and ignores storage events, so a differing layout is written back and the page reloads once to adopt it; buttons and splitters are then verified. Needs the titlebar toggles (`Terminal`, `Changes`, `Browser`, `Files`) to keep their labels.
 - **Persian keyboard:** Shift+2 types `@`.
 - **DevTools:** writes `developer_settings.json` (same as Help > Enable Developer Mode); right-click > Inspect Element.
 
