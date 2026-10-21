@@ -1,0 +1,30 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { JSDOM } from 'jsdom';
+import './build-fixture.mjs';
+
+const dom = new JSDOM(fs.readFileSync(new URL('./fixture.html', import.meta.url), 'utf8'), { runScripts: 'dangerously', pretendToBeVisual: true });
+await new Promise((r) => setTimeout(r, 500));
+const d = (id) => dom.window.document.getElementById(id).getAttribute('dir');
+for (const id of ['fa', 'en', 'ul-fa', 'td-fa', 'ed', 'edp', 'late']) assert.equal(d(id), 'auto', id);
+assert.equal(d('native'), 'ltr', 'native dir must be kept');
+for (const id of ['pre', 'ic']) assert.equal(d(id), null, id);
+const doc = dom.window.document;
+const btn = doc.querySelector('[aria-label="RTL settings"]');
+assert.ok(btn, 'titlebar button');
+assert.equal(btn.previousElementSibling.getAttribute('aria-label'), 'View options');
+btn.click();
+const panel = doc.querySelector('.crtl-panel');
+assert.equal(panel.hidden, false, 'panel opens');
+panel.querySelector('[data-key=enabled]').click();
+assert.equal(d('fa'), null, 'disable removes dir');
+assert.equal(d('native'), 'ltr');
+assert.equal(d('ed'), 'ltr', 'input native dir restored');
+panel.querySelector('[data-key=enabled]').click();
+panel.querySelector('[data-key=force]').click();
+assert.equal(d('en'), 'rtl', 'force RTL');
+// Force RTL must override Claude's own dir attribute, and releasing it must restore it.
+assert.equal(d('native'), 'rtl', 'force overrides native dir');
+panel.querySelector('[data-key=force]').click();
+assert.equal(d('native'), 'ltr', 'native dir restored after force off');
+console.log('ok');
