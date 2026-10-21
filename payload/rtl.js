@@ -12,7 +12,8 @@
 
   let wf; try { wf = require('electron').webFrame; } catch (_) {}
   let st = { ...DEFAULTS };
-  try { st = { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; } catch (_) {}
+  // Read in start(): a preload runs before the page's origin exists, so localStorage throws here.
+  const load = () => { try { st = { ...DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || '{}') }; } catch (_) {} };
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (_) {} };
 
   // ---- CSS: constructable stylesheets are exempt from the page CSP and sort after Claude's own sheets ----
@@ -253,6 +254,7 @@
 
   // ---- boot ----
   function start() {
+    load();
     setCss('ui', UI_CSS);
     applyCss();
     mark(document.body);
