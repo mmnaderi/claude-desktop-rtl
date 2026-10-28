@@ -1,6 +1,6 @@
 {
   "name": "claude-rtl",
-  "version": "2.2.1",
+  "version": "2.3.0",
   "description": "Persian/Arabic/Hebrew RTL for Claude Desktop on macOS, via a patched copy (the original app is never modified).",
   "type": "module",
   "bin": {
@@ -11,7 +11,9 @@
     "payload",
     "fonts",
     "LICENSE",
-    "README.md"
+    "README.md",
+    "AGENTS.md",
+    "settings.json"
   ],
   "os": [
     "darwin"

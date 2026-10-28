@@ -3,11 +3,16 @@
 RTL (Persian / Arabic / Hebrew) for Claude Desktop on macOS. It builds a patched **copy** at `~/Applications/Claude-RTL.app`; `/Applications/Claude.app` is never modified.
 
 ```bash
-npm install
+npm ci
+node bin/claude-rtl.mjs --check      # prerequisites (exit 1 if something is missing)
 node bin/claude-rtl.mjs              # build the copy
 node bin/claude-rtl.mjs --uninstall  # delete it
 npm test
 ```
+
+Requirements: macOS, Node 20+, Claude Desktop in `/Applications` (opened once and signed in), about 2 GB free disk. Setting this up with an AI agent? Give it this repo: [AGENTS.md](AGENTS.md) is its playbook. Do not use `npx claude-rtl`: the npm package may still be the old 1.x tool.
+
+Env: `CLAUDE_APP` (source app, default `/Applications/Claude.app`), `CLAUDE_RTL_DEST` (output app, default `~/Applications/Claude-RTL.app`).
 
 Quit Claude before opening Claude-RTL (same profile, single instance). Re-run after each Claude update; the copy does not auto-update. Expect one Keychain prompt on first launch (new signature), and macOS will ask for notification permission again: the copy has its own bundle ID (`com.anthropic.claudefordesktop.rtl`) so notification clicks open Claude-RTL, not Claude.
 
@@ -21,6 +26,7 @@ Quit Claude before opening Claude-RTL (same profile, single instance). Re-run af
 - **Shortcuts:** Alt+1/2/3/4 pick Haiku/Sonnet/Opus/Fable; Alt+0/9/8/7/6/5 pick effort Low/Medium/High/Extra/Max/Ultracode. They drive Claude's own model menu (matched by `data-model-id`), so the menu must exist in the current view. Effort matching is by label prefix and is untested against the real submenu.
 - **Layout lock:** save the current pane layout (open panes, columns, widths) once; with **Lock layout** on, every session you open gets it. Claude keeps the layout tree in `localStorage` and ignores storage events, so a differing layout is written back and the page reloads once to adopt it; buttons and splitters are then verified. Needs the titlebar toggles (`Terminal`, `Changes`, `Browser`, `Files`) to keep their labels.
 - **Persian keyboard:** Shift+2 types `@`.
+- **Portable settings:** the panel's **Copy settings** button exports your choices (font, line height, lock, saved layout). Save them as `settings.json` in the repo root and the installer seeds them as defaults on any machine; values already saved in the app still win.
 - **DevTools:** writes `developer_settings.json` (same as Help > Enable Developer Mode); right-click > Inspect Element.
 
 ## How it works

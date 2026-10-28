@@ -63,4 +63,11 @@ assert.equal(reloads, 1, 'no second reload when the tree matches');
 assert.equal(term.getAttribute('aria-pressed'), 'false', 'layout lock closes the pane again');
 assert.equal(dv.getAttribute('aria-valuenow'), '50', 'layout lock restores the splitter');
 assert.match(panel.querySelector('[data-k=layoutStatus]').textContent, /splitters 1\/1/);
+// Copy settings exports everything (including the saved layout tree) for settings.json on a new machine.
+let copied = '';
+Object.defineProperty(dom.window.navigator, 'clipboard', { value: { writeText: async (x) => { copied = x; } }, configurable: true });
+panel.querySelector('[data-act=copy]').click();
+await new Promise((r) => setTimeout(r, 100));
+assert.ok(JSON.parse(copied).layout.tree, 'copied settings include the layout tree');
+assert.match(panel.querySelector('[data-k=layoutStatus]').textContent, /Settings copied/);
 console.log('ok');

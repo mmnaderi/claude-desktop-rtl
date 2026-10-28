@@ -8,7 +8,9 @@
   const INPUTS = '[contenteditable="true"], [contenteditable="true"] p, textarea';
   const FONT_B64 = '__FONT_B64__';
   const KEY = 'claude-rtl';
-  const DEFAULTS = { enabled: true, force: false, font: 'vazir', custom: '', lineHeight: 0, lock: false, layout: null, keys: true };
+  // The installer swaps the empty object for the repo's optional settings.json.
+  const SEED = {/*__SEED__*/};
+  const DEFAULTS = { enabled: true, force: false, font: 'vazir', custom: '', lineHeight: 0, lock: false, layout: null, keys: true, ...SEED };
 
   let wf; try { wf = require('electron').webFrame; } catch (_) {}
   let st = { ...DEFAULTS };
@@ -48,6 +50,7 @@
 
   const UI_CSS = `
     [data-crtl-ui] input[type=text], [data-crtl-ui] select { width: 100%; background: transparent; color: inherit; border: 1px solid var(--cds-border, color-mix(in srgb, currentColor 25%, transparent)); border-radius: 6px; padding: 3px 6px; font: inherit; }
+    [data-crtl-btn] { pointer-events: auto !important; opacity: 1 !important; }
     [data-crtl-ui] input[type=range] { width: 100%; }
     [data-crtl-ui] .crtl-actions { display: flex; gap: 6px; }
     [data-crtl-ui] .crtl-actions button { flex: 1; background: transparent; color: inherit; border: 1px solid var(--cds-border, color-mix(in srgb, currentColor 25%, transparent)); border-radius: 6px; padding: 3px 6px; font: inherit; cursor: pointer; }
@@ -105,17 +108,35 @@
         }
         const faces = [...combos.values()].map((f) => new FontFace(f.family.replace(/"/g, ''), src(),
           { weight: f.weight, style: f.style, stretch: f.stretch, unicodeRange: RANGE }));
-        if (!faces.length) { aliasMode = true; faces.push(new FontFace('Claude RTL', src(), { weight: '100 900', unicodeRange: RANGE })); }
+        if (!faces.length) aliasMode = true;
+        faces.push(new FontFace('Claude RTL', src(), { weight: '100 900', unicodeRange: RANGE })); // used by the token overrides below
         await Promise.all(faces.map((f) => f.load()));
         if (seq !== fontSeq) return;
         faces.forEach((f) => document.fonts.add(f));
         added = faces;
+        snapshotTokens();
         setStatus(aliasMode ? 'Font loaded (fallback mode)' : 'Font loaded');
       } catch (e) {
         if (seq === fontSeq) setStatus(`Font not found: ${st.font === 'custom' ? name : e.message}`);
       }
     }
+    if (!added.length) setCss('tokens', '');
     if (seq === fontSeq && was !== aliasMode) buildCss();
+  }
+
+  // Claude's text can resolve to a system-font stack (anthropic-* never loads), so also put our Arabic-only face
+  // first in each font token. Values are snapshotted from the live computed style, then re-snapshotted if the
+  // theme/system-font attributes change.
+  const FONT_TOKENS = ['--cds-font-sans', '--cds-font-sans-display', '--cds-font-voice', '--font-ui', '--font-ui-serif',
+    '--font-claude-response', '--font-user-message', '--font-sans-serif', '--font-serif', '--font-anthropic-sans',
+    '--font-anthropic-serif', '--font-system', '--cds-font-system'];
+  function snapshotTokens() {
+    setCss('tokens', '');
+    if (!st.enabled || !added.length) return;
+    const cs = getComputedStyle(document.documentElement);
+    const decls = FONT_TOKENS.map((n) => [n, cs.getPropertyValue(n).trim()]).filter(([, v]) => v && !/^"?Claude RTL"?,/.test(v))
+      .map(([n, v]) => `${n}: "Claude RTL", ${v} !important;`);
+    if (decls.length) setCss('tokens', `:root { ${decls.join(' ')} }`);
   }
 
   function applyCss() { buildCss(); return applyFont(); }
@@ -198,11 +219,12 @@
       ${toggleRow('lock', 'Lock layout', 'Reopen saved panes and sizes in every session')}
       <div class="crtl-sub compact:px-2 comfortable:px-2.5">
         <div class="crtl-actions"><button type="button" data-act="save">Save current</button><button type="button" data-act="apply">Apply now</button></div>
+        <div class="crtl-actions"><button type="button" data-act="copy">Copy settings</button></div>
         <span class="text-footnote text-muted" data-k="layoutStatus"></span>
       </div></div></div>`;
     panel.addEventListener('click', (e) => {
       const act = e.target.closest('[data-act]');
-      if (act) return act.dataset.act === 'save' ? saveLayout() : applyLayout();
+      if (act) return act.dataset.act === 'save' ? saveLayout() : act.dataset.act === 'copy' ? copySettings() : applyLayout();
       const row = e.target.closest('[data-key]');
       if (row) {
         st[row.dataset.key] = !st[row.dataset.key]; refresh();
@@ -254,19 +276,22 @@
 
   function ensureButton() {
     if (btn && btn.isConnected) return;
-    const bar = document.querySelector('.epitaxy-titlebar-end');
-    const tpl = bar && bar.querySelector('button[data-cds-icon-only][aria-pressed="false"]');
+    const b = bar();
+    // Clone a live, enabled icon button so the styling matches; a disabled one would make our clone dead.
+    const tpl = b && [...b.querySelectorAll('button[data-cds-icon-only]')].find((x) => !x.disabled && !x.hasAttribute('data-disabled') && x.getAttribute('aria-disabled') !== 'true' && !x.hasAttribute('data-crtl-btn'));
     if (!tpl) return;
     btn = tpl.cloneNode(true);
-    for (const a of ['id', 'aria-keyshortcuts', 'data-base-ui-tooltip-trigger']) btn.removeAttribute(a);
-    btn.setAttribute('data-crtl-ui', ''); btn.setAttribute('aria-label', 'RTL settings'); btn.title = 'RTL settings (Alt+R)';
-    btn.setAttribute('aria-pressed', 'false');
+    for (const a of ['id', 'aria-keyshortcuts', 'data-base-ui-tooltip-trigger', 'disabled', 'data-disabled', 'aria-disabled', 'data-trigger-disabled', 'aria-haspopup', 'aria-expanded', 'aria-controls', 'data-popup-open', 'data-pressed', 'inert']) btn.removeAttribute(a);
+    btn.tabIndex = 0;
+    btn.setAttribute('data-crtl-ui', ''); btn.setAttribute('data-crtl-btn', '');
+    btn.setAttribute('aria-label', 'RTL settings'); btn.title = 'RTL settings (Alt+R)';
+    btn.setAttribute('aria-pressed', panel && !panel.hidden ? 'true' : 'false');
     const icon = btn.querySelector('[data-cds="Icon"]');
     if (icon) icon.outerHTML = ICON; else btn.insertAdjacentHTML('beforeend', ICON);
-    btn.addEventListener('click', (e) => { e.stopPropagation(); togglePanel(); });
-    const anchor = bar.querySelector('button[aria-label="View options"]');
-    anchor ? anchor.after(btn) : bar.append(btn);
+    const anchor = b.querySelector('button[aria-label="View options"]');
+    anchor ? anchor.after(btn) : b.append(btn);
   }
+
 
   // ---- Alt+1..4 pick a model, Alt+0/9/8/7/6/5 pick an effort, by driving Claude's own menus ----
   const MODELS = { Digit1: 'haiku', Digit2: 'sonnet', Digit3: 'opus', Digit4: 'fable' };
@@ -407,6 +432,17 @@
     try { return walk(t.root); } catch (_) { return ''; }
   }
 
+  // Export for a new machine: paste the result into settings.json in the repo.
+  async function copySettings() {
+    const text = JSON.stringify(st, null, 2);
+    try { await navigator.clipboard.writeText(text); }
+    catch (_) {
+      try { const ta = document.createElement('textarea'); ta.value = text; document.body.append(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+      catch (e) { return setLayoutStatus('Copy failed'); }
+    }
+    setLayoutStatus('Settings copied · save as settings.json in the repo');
+  }
+
   async function saveLayout() {
     const panes = {};
     for (const l of PANES) { const b = paneBtn(l); if (b && b.hasAttribute('aria-pressed')) panes[l] = pressed(b); }
@@ -542,6 +578,9 @@
     ensureButton();
     checkSession();
     addEventListener('load', () => setTimeout(applyFont, 1500));
+    let tokenTimer = 0;
+    new MutationObserver(() => { clearTimeout(tokenTimer); tokenTimer = setTimeout(snapshotTokens, 300); })
+      .observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'lang', 'data-theme', 'data-mode', 'data-system-font', 'data-cds-fizzy-lake'] });
 
     let queue = new Set(), raf = 0;
     new MutationObserver((muts) => {
@@ -551,6 +590,8 @@
     }).observe(document.body, { childList: true, subtree: true });
 
     document.addEventListener('click', (e) => {
+      const own = e.target.closest && e.target.closest('[data-crtl-btn]');
+      if (own) { e.stopPropagation(); btn = own; togglePanel(); return; }
       if (e.isTrusted && panel && !panel.hidden && !e.target.closest('[data-crtl-ui]')) togglePanel(false);
     }, true);
     addEventListener('resize', () => panel && !panel.hidden && placePanel());
