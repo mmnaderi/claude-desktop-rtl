@@ -4,7 +4,8 @@ const payload = fs.readFileSync(new URL('../payload/rtl.js', import.meta.url), '
 const html = `<!doctype html><meta charset=utf-8><body style="font:16px sans-serif;width:600px">
 <div class="epitaxy-titlebar-end"><button data-cds-icon-only aria-pressed="false" aria-label="Terminal" id="x"><span data-cds="Icon"></span></button><button aria-label="View options"></button></div>
 <div id="dv" data-tile-divider role="separator" aria-orientation="vertical" aria-valuenow="50" aria-label="Resize A and B" tabindex="0"></div>
-<div id=chat>
+<p id=side>Sidebar item</p>
+<div id=chat class="prose" data-cds="Prose">
 <p id=fa>سلام، این یک متن فارسی با کلمه‌ی English وسط آن است.</p>
 <p id=en>This is English with فارسی inside.</p>
 <p id=num>۱۲۳ شروع با عدد فارسی</p>

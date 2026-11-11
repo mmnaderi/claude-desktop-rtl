@@ -23,6 +23,7 @@ assert.equal(d('ed'), 'ltr', 'input native dir restored');
 panel.querySelector('[data-key=enabled]').click();
 panel.querySelector('[data-key=force]').click();
 assert.equal(d('en'), 'rtl', 'force RTL');
+assert.equal(d('side'), 'auto', 'force RTL leaves non-chat UI on auto');
 // Force RTL must override Claude's own dir attribute, and releasing it must restore it.
 assert.equal(d('native'), 'rtl', 'force overrides native dir');
 panel.querySelector('[data-key=force]').click();

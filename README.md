@@ -18,7 +18,7 @@ Quit Claude before opening Claude-RTL (same profile, single instance). Re-run af
 
 ## What it does
 
-- **Direction:** `dir="auto"` on blocks, lists, tables and the input. Claude's own `dir` attributes are respected unless **Force RTL** is on.
+- **Direction:** `dir="auto"` on blocks, lists, tables and the input. Claude's own `dir` attributes are respected unless **Force RTL** is on; Force RTL applies only to the chat (message bodies and the input), the rest of the app stays on auto.
 - **Code and math** stay LTR.
 - **Font:** extends Claude's own `anthropic-sans` / `anthropic-serif` families with Vazirmatn (or an installed font) for Arabic-script glyphs only, so Latin keeps Claude's font.
 - **Line height:** overrides Claude's `--cds-leading-prose` / `--_prose-leading` chain for prose containing RTL text.

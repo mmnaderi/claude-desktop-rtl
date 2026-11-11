@@ -142,22 +142,25 @@
   function applyCss() { buildCss(); return applyFont(); }
 
   // ---- direction marking (native dir attributes are left alone, except on inputs) ----
-  const mode = () => (st.force ? 'rtl' : 'auto');
+  // Force RTL covers only the chat: message bodies (Claude's Prose) and the input. The rest of the app stays on auto.
+  const CHAT = '.prose, [data-cds="Prose"]';
+  const forced = (el) => st.force && (el.matches(INPUTS) || !!el.closest(CHAT));
+  const mode = (el) => (forced(el) ? 'rtl' : 'auto');
 
   function mark(root) {
     if (!st.enabled || root.nodeType !== 1 || root.closest('[data-crtl-ui]')) return;
-    const sel = BLOCKS + ',' + INPUTS + (st.force ? ', .prose, [data-cds="Prose"]' : '');
+    const sel = BLOCKS + ',' + INPUTS + (st.force ? ',' + CHAT : '');
     const els = root.matches(sel) ? [root] : [];
     els.push(...root.querySelectorAll(sel));
     for (const el of els) {
       if (el.closest(CODE)) continue;
       if (!el.hasAttribute('data-crtl')) {
         const native = el.hasAttribute('dir');
-        if (native && !st.force && !el.matches(INPUTS)) continue;
+        if (native && !forced(el) && !el.matches(INPUTS)) continue;
         if (native) el.setAttribute('data-crtl-orig', el.getAttribute('dir'));
         el.setAttribute('data-crtl', '');
       }
-      if (el.dir !== mode()) el.dir = mode();
+      if (el.dir !== mode(el)) el.dir = mode(el);
     }
   }
 
@@ -175,9 +178,9 @@
     if (st.enabled) {
       document.querySelectorAll('[data-crtl]').forEach((el) => {
         const orig = el.getAttribute('data-crtl-orig');
-        if (orig != null && !st.force && !el.matches(INPUTS)) {
+        if (orig != null && !forced(el) && !el.matches(INPUTS)) {
           el.setAttribute('dir', orig); el.removeAttribute('data-crtl'); el.removeAttribute('data-crtl-orig');
-        } else el.dir = mode();
+        } else el.dir = mode(el);
       });
       mark(document.body);
     }
@@ -203,7 +206,7 @@
     panel.style.cssText = 'position:fixed;top:0;left:0;z-index:120;--cds-layer-base:100;';
     panel.innerHTML = `<div data-side="bottom" data-align="end" data-open="" tabindex="-1" role="menu" data-cds-overlay="" data-cds="Menu" class="${MENU}" style="width:272px"><div class="${SCROLL}" data-cds-sheet-scroll="">
       ${toggleRow('enabled', 'Smart RTL', 'Auto-align Persian, Arabic, Hebrew · Alt+R')}
-      ${toggleRow('force', 'Force RTL', 'Right-align everything')}
+      ${toggleRow('force', 'Force RTL', 'Right-align the chat')}
       ${SEP}
       <div class="crtl-sub compact:px-2 comfortable:px-2.5">
         <span class="text-footnote text-muted">RTL font</span>
