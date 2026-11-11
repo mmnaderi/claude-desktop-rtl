@@ -217,7 +217,7 @@
         <input type="range" data-k="lineHeight" min="0" max="2.4" step="0.1" />
       </div>
       ${SEP}
-      ${toggleRow('keys', 'Model & effort shortcuts', 'Alt+1–4 model · Alt+0,9,8,7,6,5 effort')}
+      ${toggleRow('keys', 'Model & effort shortcuts', 'Alt+1–4 model · Alt+5–9 effort · Alt+−/+ step · Alt+0 Ultracode')}
       ${SEP}
       ${toggleRow('lock', 'Lock layout', 'Reopen saved panes and sizes in every session')}
       <div class="crtl-sub compact:px-2 comfortable:px-2.5">
@@ -296,9 +296,13 @@
   }
 
 
-  // ---- Alt+1..4 pick a model, Alt+0/9/8/7/6/5 pick an effort, by driving Claude's own menus ----
+  // ---- Alt+1..4 pick a model, Alt+5..9 an effort, Alt+−/+ step it, Alt+0 toggles Ultracode, all through Claude's own menus ----
   const MODELS = { Digit1: 'haiku', Digit2: 'sonnet', Digit3: 'opus', Digit4: 'fable' };
-  const EFFORTS = { Digit0: /^low/i, Digit9: /^medium/i, Digit8: /^high/i, Digit7: /^(extra|x-?high)/i, Digit6: /^max/i, Digit5: /^ultra/i };
+  const LEVELS = [/^low/i, /^medium/i, /^high/i, /^(extra|x-?high)/i, /^max/i]; // lowest to highest
+  const EFFORTS = { Digit5: 0, Digit6: 1, Digit7: 2, Digit8: 3, Digit9: 4 };
+  const ULTRA = /^ultra\s*-?code/i;
+  const label = (el) => el.textContent.trim() || el.getAttribute('aria-label') || '';
+  const level = (el) => LEVELS.findIndex((re) => re.test(label(el)));
 
   function press(el) {
     const P = window.PointerEvent || MouseEvent;
@@ -353,15 +357,62 @@
     if (usable(item)) press(item); else closeMenus();
   }
 
-  async function pickEffort(re) {
+  // Opens the Effort submenu and returns its level radios (Low..Max), or null.
+  async function openEffortMenu() {
     const menu = await openModelMenu();
-    const row = menu && [...menu.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]')].find((r) => /^effort/i.test(r.textContent.trim()));
-    if (!row) return closeMenus();
+    const row = menu && [...menu.querySelectorAll('[role="menuitem"][aria-haspopup="menu"]')].find((r) => /^effort/i.test(label(r)));
+    if (!row) return null;
     press(row);
     row.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', code: 'ArrowRight', bubbles: true }));
-    const item = await waitFor(() => [...document.querySelectorAll('[role="menu"] [role="menuitemradio"]')]
-      .find((i) => !i.hasAttribute('data-model-id') && re.test(i.textContent.trim())));
-    if (usable(item)) { press(item); closeMenus(); } else closeMenus();
+    return waitFor(() => {
+      const items = [...document.querySelectorAll('[role="menu"] [role="menuitemradio"]')].filter((i) => !i.hasAttribute('data-model-id') && level(i) >= 0);
+      return items.length ? items : null;
+    });
+  }
+
+  // pick(levels this model offers, ascending; current level or -1) -> wanted level.
+  async function setEffort(pick) {
+    const items = await openEffortMenu();
+    if (items) {
+      const cur = items.find((i) => i.getAttribute('aria-checked') === 'true');
+      const want = pick(items.map(level).sort((a, b) => a - b), cur ? level(cur) : -1);
+      const item = items.find((i) => level(i) === want);
+      if (usable(item) && item !== cur) press(item);
+    }
+    closeMenus();
+  }
+  // Steps over the levels the current model actually offers (some lack Extra).
+  const stepEffort = (d) => setEffort((ls, c) => (c < 0 ? -1 : ls[Math.min(ls.length - 1, Math.max(0, ls.indexOf(c) + d))]));
+
+  // Ultracode is a toggle: look in the model menu, then the Effort submenu, then for an on-screen switch.
+  // Menus first, so a chat or session titled "Ultracode…" is never clicked.
+  async function toggleUltra() {
+    const find = (sel) => [...document.querySelectorAll(sel)]
+      .find((i) => !i.closest('[data-crtl-ui]') && !i.hasAttribute('data-model-id') && ULTRA.test(label(i)));
+    const inMenu = () => find('[role="menu"] [role^="menuitem"], [role="menu"] [role="switch"]');
+    let item = (await openModelMenu()) && inMenu();
+    if (!item && (await openEffortMenu())) item = await waitFor(inMenu, 600);
+    if (usable(item)) press(item);
+    closeMenus();
+    if (!item) { const sw = find('[role="switch"], button[aria-pressed]'); if (usable(sw)) press(sw); }
+  }
+
+  // Fast presses would start overlapping menu walks; drop presses while one runs.
+  let busy = false;
+  async function once(fn) {
+    if (busy) return;
+    busy = true;
+    try { await fn(); } finally { busy = false; }
+  }
+
+  function shortcut(e) {
+    if (e.shiftKey) return e.code === 'Equal' ? () => stepEffort(1) : null; // Shift+= is "+"
+    if (MODELS[e.code]) return () => pickModel(MODELS[e.code]);
+    if (e.code in EFFORTS) return () => setEffort(() => EFFORTS[e.code]);
+    if (e.code === 'Digit0') return toggleUltra;
+    if (e.code === 'Minus') return () => stepEffort(-1);
+    if (e.code === 'Equal') return () => stepEffort(1);
+    return null;
   }
 
   // ---- Layout lock: reopen the same panes and split sizes in every session ----
@@ -600,10 +651,8 @@
     addEventListener('resize', () => panel && !panel.hidden && placePanel());
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && e.isTrusted && panel && !panel.hidden) togglePanel(false);
-      if (st.keys && e.altKey && !e.metaKey && !e.ctrlKey && !e.shiftKey && (MODELS[e.code] || EFFORTS[e.code])) {
-        e.preventDefault();
-        MODELS[e.code] ? pickModel(MODELS[e.code]) : pickEffort(EFFORTS[e.code]);
-      }
+      const act = st.keys && e.altKey && !e.metaKey && !e.ctrlKey && shortcut(e);
+      if (act) { e.preventDefault(); if (!e.repeat) once(act); } // held keys must not re-toggle Ultracode
       if (e.altKey && e.code === 'KeyR') { e.preventDefault(); st.enabled = !st.enabled; refresh(); }
       // Persian layout: Shift+2 yields "٬" instead of "@".
       if (st.enabled && e.shiftKey && e.code === 'Digit2' && e.key === '٬' && !e.metaKey && !e.ctrlKey) {

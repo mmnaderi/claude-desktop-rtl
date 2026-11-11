@@ -19,7 +19,7 @@ Goal: a second app, `~/Applications/Claude-RTL.app`, that is Claude Desktop with
 ## Only the human can do
 
 - Click **Allow** on the Keychain prompt at first launch (new signature) and on the notifications prompt for Claude-RTL.
-- Look at the result: the titlebar RTL button, a Persian reply, Alt+1..4 models, Alt+0/9/8/7/6/5 effort.
+- Look at the result: the titlebar RTL button, a Persian reply, Alt+1..4 models, Alt+5..9 effort, Alt+−/+ effort step, Alt+0 Ultracode.
 - Without `settings.json`: choose a layout, open the panel, **Save current**, turn on **Lock layout**.
 - Optional extra fonts (for example Dana) must be installed by the human; the built-in Vazirmatn works everywhere.
 
@@ -41,7 +41,7 @@ The patch depends on parts of Claude's UI. If something stops working after an u
 | Titlebar button | `.epitaxy-titlebar-end` and an enabled `button[data-cds-icon-only]` to clone |
 | Fonts | font tokens `--cds-font-sans`, `--font-ui`, ... and the `anthropic-sans` / `anthropic-serif` families |
 | Line height | `.prose` and `--cds-leading-prose` / `--_prose-leading` |
-| Model/effort keys | `[data-cds="ModelSelector"]` menu, `data-model-id`, an `Effort` submenu |
+| Model/effort keys | `[data-cds="ModelSelector"]` menu, `data-model-id`, an `Effort` submenu with `menuitemradio` levels, an item labelled `Ultracode` |
 | Layout lock | `epitaxy.sidePaneStore.v1` tree, `[data-tile-divider]` splitters, titlebar toggles `Terminal` / `Changes` / `Browser` / `Files` |
 
 ## Working on the code

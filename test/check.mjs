@@ -38,6 +38,28 @@ panel.querySelector('[data-key=keys]').click();
 doc.dispatchEvent(new dom.window.KeyboardEvent('keydown', { code: 'Digit1', altKey: true, bubbles: true }));
 await new Promise((r) => setTimeout(r, 300));
 assert.equal(dom.window.picked, 'claude-haiku-5-5', 'Alt+1 selects Haiku');
+// Effort: Alt+5..9 pick a level, Alt+−/+ step one level and stop at the ends, Alt+0 toggles Ultracode.
+const alt = async (code, shiftKey = false, repeat = false) => {
+  doc.dispatchEvent(new dom.window.KeyboardEvent('keydown', { code, altKey: true, shiftKey, repeat, bubbles: true }));
+  await new Promise((r) => setTimeout(r, 400));
+};
+await alt('Digit5'); assert.equal(dom.window.effort, 'Low', 'Alt+5 Low');
+await alt('Minus'); assert.equal(dom.window.effort, 'Low', 'Alt+- stops at Low');
+await alt('Equal'); assert.equal(dom.window.effort, 'Medium', 'Alt+= steps up');
+await alt('Equal', true); assert.equal(dom.window.effort, 'High', 'Alt+Shift+= (+) steps up');
+await alt('Digit9'); assert.equal(dom.window.effort, 'Max', 'Alt+9 Max');
+await alt('Equal'); assert.equal(dom.window.effort, 'Max', 'Alt+= stops at Max');
+await alt('Minus'); assert.equal(dom.window.effort, 'Extra', 'Alt+- steps down');
+await alt('Digit0'); assert.equal(dom.window.ultra, true, 'Alt+0 turns Ultracode on');
+await alt('Digit0', false, true); assert.equal(dom.window.ultra, true, 'held Alt+0 (key repeat) does not re-toggle');
+assert.equal(dom.window.wrongClick, undefined, 'a non-menu button titled Ultracode is never clicked');
+dom.window.ultraInEffort = true;
+await alt('Digit0'); assert.equal(dom.window.ultra, false, 'Alt+0 also finds the toggle in the Effort submenu');
+assert.equal(doc.querySelector('[data-cds=ModelSelector][role=menu], #effmenu'), null, 'menus closed afterwards');
+// A model without Extra: stepping skips the missing level instead of getting stuck.
+dom.window.noExtra = true;
+await alt('Digit7'); await alt('Equal'); assert.equal(dom.window.effort, 'Max', 'High + step skips missing Extra');
+await alt('Minus'); assert.equal(dom.window.effort, 'High', 'Max - step skips missing Extra');
 // Layout lock. Saved tree differs from the live one -> write it under the active session and reload once.
 const ls = dom.window.localStorage, tree = (n) => ({ root: { kind: 'stack', id: 's', direction: 'row', flex: 1, children: [{ kind: 'tile', tileId: 'chat', flex: 1 }, ...(n > 1 ? [{ kind: 'tile', tileId: 'terminal', flex: 2 }] : [])] } });
 const setStore = (n) => ls.setItem('epitaxy.sidePaneStore.v1', JSON.stringify({ state: { tileLayout: tree(n), tileLayoutBySession: {} }, version: 1 }));

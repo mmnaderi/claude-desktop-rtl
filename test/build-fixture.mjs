@@ -5,6 +5,7 @@ const html = `<!doctype html><meta charset=utf-8><body style="font:16px sans-ser
 <div class="epitaxy-titlebar-end"><button data-cds-icon-only aria-pressed="false" aria-label="Terminal" id="x"><span data-cds="Icon"></span></button><button aria-label="View options"></button></div>
 <div id="dv" data-tile-divider role="separator" aria-orientation="vertical" aria-valuenow="50" aria-label="Resize A and B" tabindex="0"></div>
 <p id=side>Sidebar item</p>
+<button id=ubtn onclick="window.wrongClick = true">Ultracode notes</button>
 <div id=chat class="prose" data-cds="Prose">
 <p id=fa>سلام، این یک متن فارسی با کلمه‌ی English وسط آن است.</p>
 <p id=en>This is English with فارسی inside.</p>
@@ -21,11 +22,33 @@ const html = `<!doctype html><meta charset=utf-8><body style="font:16px sans-ser
 <script>
 document.getElementById('x').addEventListener('click', (e) => e.currentTarget.setAttribute('aria-pressed', e.currentTarget.getAttribute('aria-pressed') !== 'true'));
 document.getElementById('dv').addEventListener('keydown', (e) => { const d = document.getElementById('dv'); const v = +d.getAttribute('aria-valuenow'); d.setAttribute('aria-valuenow', v + (e.key === 'ArrowRight' ? 5 : -5)); });
+// Model menu mock: models, an Effort submenu (Low..Max radios) and an Ultracode toggle (main menu, or the submenu if ultraInEffort).
+window.effort = 'High'; window.ultra = false;
+const ultraItem = () => {
+  const u = document.createElement('div'); u.setAttribute('role', 'menuitemcheckbox'); u.setAttribute('aria-checked', String(window.ultra)); u.textContent = 'Ultracode';
+  u.addEventListener('click', () => { window.ultra = !window.ultra; });
+  return u;
+};
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  document.querySelectorAll('[role=menu]:not([data-crtl-ui] *, [data-crtl-ui])').forEach((m) => m.remove());
+  ms.setAttribute('aria-expanded', 'false');
+});
 ms.addEventListener('mousedown', () => {
   ms.setAttribute('aria-expanded', 'true');
   const m = document.createElement('div'); m.setAttribute('role', 'menu'); m.setAttribute('data-cds', 'ModelSelector');
-  m.innerHTML = '<div role="menuitemradio" data-model-id="claude-haiku-5-5">Haiku</div><div role="menuitemradio" data-model-id="claude-opus-5-5">Opus</div>';
+  m.innerHTML = '<div role="menuitemradio" data-model-id="claude-haiku-5-5">Haiku</div><div role="menuitemradio" data-model-id="claude-opus-5-5">Opus</div>'
+    + '<div role="menuitem" aria-haspopup="menu" id="effrow"><span>Effort</span> <span>' + window.effort + '</span></div>';
+  if (!window.ultraInEffort) m.append(ultraItem());
   m.querySelectorAll('[data-model-id]').forEach((i) => i.addEventListener('click', () => { window.picked = i.dataset.modelId; }));
+  m.querySelector('#effrow').addEventListener('click', () => {
+    if (document.getElementById('effmenu')) return;
+    const s = document.createElement('div'); s.setAttribute('role', 'menu'); s.id = 'effmenu';
+    s.innerHTML = ['Low', 'Medium', 'High', 'Extra', 'Max'].filter((l) => !(window.noExtra && l === 'Extra')).map((l) => '<div role="menuitemradio" aria-checked="' + (l === window.effort) + '">' + l + '</div>').join('');
+    s.querySelectorAll('[role=menuitemradio]').forEach((i) => i.addEventListener('click', () => { window.effort = i.textContent; }));
+    if (window.ultraInEffort) s.append(ultraItem());
+    document.body.append(s);
+  });
   document.body.append(m);
 });
 </script>
