@@ -11,6 +11,12 @@ import { flipFuses, FuseVersion, FuseV1Options } from '@electron/fuses';
 const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = process.env.CLAUDE_APP || '/Applications/Claude.app';
 const DEST = process.env.CLAUDE_RTL_DEST || path.join(os.homedir(), 'Applications', 'Claude-RTL.app');
+// The copy is built here first and swapped in at the end, so a failed build keeps the working copy.
+const BUILD = path.join(path.dirname(DEST), `.${path.basename(DEST, '.app')}-building.app`);
+// Keep Claude's own bundle ID, so apps that look for the running Claude (such as CodeIsland) find this copy.
+const KEEP_ID = process.env.CLAUDE_RTL_KEEP_ID === '1';
+// A code-signing identity name; a stable signature stops the Keychain prompt after each rebuild. '-' is ad-hoc.
+const SIGN = process.env.CLAUDE_RTL_SIGN || '-';
 // Preloads that run inside claude.ai pages. The main-process entry must stay untouched.
 const TARGETS = ['mainView.js', 'quickWindow.js'];
 const START = '// --- CLAUDE RTL PATCH START ---';
@@ -68,22 +74,22 @@ async function check() {
 async function install() {
   if (process.platform !== 'darwin') die('macOS only.');
   if (!fs.existsSync(SRC)) die(`Claude not found at ${SRC}`);
-  uninstall();
+  fs.rmSync(BUILD, { recursive: true, force: true });
 
   step('Copying Claude.app');
   fs.mkdirSync(path.dirname(DEST), { recursive: true });
-  run('cp', ['-R', SRC, DEST]);
+  run('cp', ['-R', SRC, BUILD]);
 
-  const plist = path.join(DEST, 'Contents/Info.plist');
+  const plist = path.join(BUILD, 'Contents/Info.plist');
   const pb = (c) => { try { run('/usr/libexec/PlistBuddy', ['-c', c, plist]); } catch {} };
   pb('Delete :CFBundleIconName'); // otherwise the asset-catalog icon wins
   // A distinct bundle ID makes notification clicks and deep links open this copy, not /Applications/Claude.app.
-  pb('Set :CFBundleIdentifier com.anthropic.claudefordesktop.rtl');
+  if (!KEEP_ID) pb('Set :CFBundleIdentifier com.anthropic.claudefordesktop.rtl');
   pb('Add :CFBundleDisplayName string Claude-RTL');
   pb('Set :CFBundleDisplayName Claude-RTL');
 
   step('Patching app.asar');
-  const asarPath = path.join(DEST, 'Contents/Resources/app.asar');
+  const asarPath = path.join(BUILD, 'Contents/Resources/app.asar');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-rtl-'));
   try {
     const dir = path.join(tmp, 'app');
@@ -105,17 +111,21 @@ async function install() {
   }
 
   step('Disabling ASAR integrity check (fuse)');
-  await flipFuses(DEST, { version: FuseVersion.V1, [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: false });
+  await flipFuses(BUILD, { version: FuseVersion.V1, [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: false });
 
-  step('Ad-hoc signing');
+  step(SIGN === '-' ? 'Ad-hoc signing' : `Signing as "${SIGN}"`);
   const ent = path.join(os.tmpdir(), `claude-rtl-${process.pid}.plist`);
   fs.writeFileSync(ent, run('codesign', ['-d', '--entitlements', ':-', SRC]));
-  // Keys tied to Anthropic's team ID are rejected under an ad-hoc signature.
+  // Keys tied to Anthropic's team ID are rejected under an ad-hoc or self-signed signature.
   for (const k of ['com.apple.application-identifier', 'com.apple.developer.team-identifier', 'keychain-access-groups']) {
     try { run('/usr/libexec/PlistBuddy', ['-c', `Delete :${k}`, ent]); } catch {}
   }
-  run('codesign', ['--force', '--deep', '--sign', '-', '--entitlements', ent, DEST]);
+  run('codesign', ['--force', '--deep', '--sign', SIGN, '--entitlements', ent, BUILD]);
   fs.rmSync(ent, { force: true });
+
+  step('Swapping in the new copy');
+  uninstall();
+  fs.renameSync(BUILD, DEST);
 
   // Same switch as Help > Enable Developer Mode (shared profile, so it also applies to the original app).
   const dev = path.join(os.homedir(), 'Library/Application Support/Claude/developer_settings.json');
@@ -130,5 +140,5 @@ async function install() {
 const arg = process.argv[2];
 if (arg === '--uninstall' || arg === '-u') uninstall();
 else if (arg === '--check') check();
-else if (!arg || arg === '--install') install().catch((e) => { fs.rmSync(DEST, { recursive: true, force: true }); die(e.message); });
-else console.log('Usage: claude-rtl [--check | --install | --uninstall]\nEnv: CLAUDE_APP (source app), CLAUDE_RTL_DEST (output app)');
+else if (!arg || arg === '--install') install().catch((e) => { fs.rmSync(BUILD, { recursive: true, force: true }); die(`${e.message}\n  The previous copy, if any, is unchanged.`); });
+else console.log('Usage: claude-rtl [--check | --install | --uninstall]\nEnv: CLAUDE_APP (source app), CLAUDE_RTL_DEST (output app),\n     CLAUDE_RTL_KEEP_ID=1 (keep Claude\'s bundle ID), CLAUDE_RTL_SIGN (signing identity, default ad-hoc)');

@@ -12,7 +12,7 @@ Goal: a second app, `~/Applications/Claude-RTL.app`, that is Claude Desktop with
 6. Quit Claude Desktop if it is running, then `node bin/claude-rtl.mjs`. It copies the app, patches the copy, signs it ad hoc, and enables Developer Mode.
 7. Verify without touching the user's data:
    - `codesign --verify --deep --strict ~/Applications/Claude-RTL.app` prints nothing.
-   - `/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" ~/Applications/Claude-RTL.app/Contents/Info.plist` prints `com.anthropic.claudefordesktop.rtl`.
+   - `/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" ~/Applications/Claude-RTL.app/Contents/Info.plist` prints `com.anthropic.claudefordesktop.rtl` (or `com.anthropic.claudefordesktop` with `CLAUDE_RTL_KEEP_ID=1`).
    - Optional smoke launch: `~/Applications/Claude-RTL.app/Contents/MacOS/Claude --user-data-dir=$(mktemp -d)`, wait about 10 s, check it is running, then `pkill -f "Claude-RTL.app/Contents/MacOS/"`. Never pass `--remote-debugging-port`: the app refuses to start with it.
 8. Tell the human what only they can do (below).
 
@@ -31,7 +31,9 @@ Goal: a second app, `~/Applications/Claude-RTL.app`, that is Claude Desktop with
 
 ## After a Claude update
 
-The copy does not update itself. Re-run `node bin/claude-rtl.mjs --check`, then `node bin/claude-rtl.mjs`. Saved panel settings survive, because they live in the profile's localStorage under `claude-rtl`.
+The copy does not update itself. Re-run `node bin/claude-rtl.mjs --check`, then `node bin/claude-rtl.mjs`, or install the LaunchAgent once: `zsh bin/auto-rebuild.sh install` (README: Auto-rebuild). A failed build keeps the previous copy.
+
+If the human wants no Keychain prompt after each update, they run `zsh bin/make-signing-cert.sh` themselves (it trusts a certificate, so it needs their password); then set `CLAUDE_RTL_SIGN="Claude-RTL Signing"` for builds and for `auto-rebuild.sh install`. If an app such as CodeIsland opens Claude.app instead of the copy, set `CLAUDE_RTL_KEEP_ID=1` the same way. Saved panel settings survive, because they live in the profile's localStorage under `claude-rtl`.
 
 The patch depends on parts of Claude's UI. If something stops working after an update, these are the contracts to re-check (open DevTools in Claude-RTL: right-click, Inspect Element; our log lines start with `[claude-rtl]`):
 

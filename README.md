@@ -12,9 +12,9 @@ npm test
 
 Requirements: macOS, Node 20+, Claude Desktop in `/Applications` (opened once and signed in), about 2 GB free disk. Setting this up with an AI agent? Give it this repo: [AGENTS.md](AGENTS.md) is its playbook. Do not use `npx claude-rtl`: the npm package may still be the old 1.x tool.
 
-Env: `CLAUDE_APP` (source app, default `/Applications/Claude.app`), `CLAUDE_RTL_DEST` (output app, default `~/Applications/Claude-RTL.app`).
+Env: `CLAUDE_APP` (source app, default `/Applications/Claude.app`), `CLAUDE_RTL_DEST` (output app, default `~/Applications/Claude-RTL.app`), `CLAUDE_RTL_KEEP_ID=1` (keep Claude's bundle ID, see below), `CLAUDE_RTL_SIGN` (code-signing identity, default ad hoc).
 
-Quit Claude before opening Claude-RTL (same profile, single instance). Re-run after each Claude update; the copy does not auto-update. Expect one Keychain prompt on first launch (new signature), and macOS will ask for notification permission again: the copy has its own bundle ID (`com.anthropic.claudefordesktop.rtl`) so notification clicks open Claude-RTL, not Claude.
+Quit Claude before opening Claude-RTL (same profile, single instance). The copy does not update itself: re-run after each Claude update, or let [auto-rebuild](#auto-rebuild-after-claude-updates) do it. A failed build keeps the previous copy. Expect one Keychain prompt on first launch (new signature), and macOS will ask for notification permission again: the copy has its own bundle ID (`com.anthropic.claudefordesktop.rtl`) so notification clicks open Claude-RTL, not Claude.
 
 ## What it does
 
@@ -29,6 +29,20 @@ Quit Claude before opening Claude-RTL (same profile, single instance). Re-run af
 - **Portable settings:** the panel's **Copy settings** button exports your choices (font, line height, lock, saved layout). Save them as `settings.json` in the repo root and the installer seeds them as defaults on any machine; values already saved in the app still win.
 - **DevTools:** writes `developer_settings.json` (same as Help > Enable Developer Mode); right-click > Inspect Element.
 
+## Auto-rebuild after Claude updates
+
+```bash
+zsh bin/auto-rebuild.sh install     # LaunchAgent; keeps the CLAUDE_* env vars set in this shell
+zsh bin/auto-rebuild.sh status      # what it would do now
+zsh bin/auto-rebuild.sh uninstall
+```
+
+It runs when `Claude.app` changes and every 10 minutes. When Claude's version differs from the copy, it runs `--check`, then rebuilds. If Claude-RTL is open, it only notifies you and rebuilds after you quit it. If the patch no longer fits the new Claude, it keeps your current copy and notifies you. Log: `~/Library/Logs/claude-rtl-autorebuild.log`.
+
+**Stable signature.** An ad-hoc signature changes with every build, so macOS asks for Keychain access after every update. Run `zsh bin/make-signing-cert.sh` once (it asks for your password to trust a self-signed code-signing certificate), then build with `CLAUDE_RTL_SIGN="Claude-RTL Signing"`. Allow Keychain access once more; later rebuilds keep the same signature. The first signed build may ask to let `codesign` use the key: choose Always Allow.
+
+**Apps that open "Claude" by bundle ID** (for example CodeIsland, which opens `com.anthropic.claudefordesktop`): build with `CLAUDE_RTL_KEEP_ID=1`. While Claude-RTL is running, such apps find it, because they look for the running app first. The trade-off: when neither app is open, a notification click or a `claude://` link may open `/Applications/Claude.app`.
+
 ## How it works
 
-Copies the app, prepends `payload/rtl.js` to the `mainView.js` and `quickWindow.js` preloads, disables the ASAR-integrity fuse, and ad-hoc signs with the original entitlements (minus team-ID keys). The main-process entry is left alone.
+Copies the app, prepends `payload/rtl.js` to the `mainView.js` and `quickWindow.js` preloads, disables the ASAR-integrity fuse, and signs (ad hoc, or with `CLAUDE_RTL_SIGN`) with the original entitlements (minus team-ID keys). It builds in a hidden sibling folder and swaps it in at the end. The main-process entry is left alone.
