@@ -32,12 +32,12 @@ Quit Claude before opening Claude-RTL (same profile, single instance). The copy 
 ## Auto-rebuild after Claude updates
 
 ```bash
-zsh bin/auto-rebuild.sh install     # LaunchAgent; keeps the CLAUDE_* env vars set in this shell
+zsh bin/auto-rebuild.sh install     # LaunchAgent; keeps the CLAUDE_* env vars set in this shell; re-run after git pull
 zsh bin/auto-rebuild.sh status      # what it would do now
 zsh bin/auto-rebuild.sh uninstall
 ```
 
-It runs when `Claude.app` changes and every 10 minutes. When Claude's version differs from the copy, it runs `--check`, then rebuilds. If Claude-RTL is open, it only notifies you and rebuilds after you quit it. If the patch no longer fits the new Claude, it keeps your current copy and notifies you. Log: `~/Library/Logs/claude-rtl-autorebuild.log`.
+It runs when `Claude.app` changes and every 10 minutes. When Claude's version differs from the copy, it runs `--check`, then rebuilds. If Claude-RTL is open, it only notifies you and rebuilds after you quit it. If the patch no longer fits the new Claude, it keeps your current copy and notifies you. It runs a copy of this tool in `~/Library/Application Support/claude-rtl/src`, because macOS does not let background jobs read `~/Desktop` or `~/Documents`. Log: `~/Library/Logs/claude-rtl-autorebuild.log`.
 
 **Stable signature.** An ad-hoc signature changes with every build, so macOS asks for Keychain access after every update. Run `zsh bin/make-signing-cert.sh` once (it asks for your password to trust a self-signed code-signing certificate), then build with `CLAUDE_RTL_SIGN="Claude-RTL Signing"`. Allow Keychain access once more; later rebuilds keep the same signature. The first signed build may ask to let `codesign` use the key: choose Always Allow.
 

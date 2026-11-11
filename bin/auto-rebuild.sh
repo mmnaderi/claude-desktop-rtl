@@ -3,12 +3,14 @@
 # Info.plist changes, and every 10 minutes (to catch the moment you quit Claude-RTL).
 #   auto-rebuild.sh             rebuild if Claude's version changed (the LaunchAgent runs this)
 #   auto-rebuild.sh status      print the decision only, change nothing
-#   auto-rebuild.sh install     install the LaunchAgent; it keeps CLAUDE_APP, CLAUDE_RTL_DEST,
+#   auto-rebuild.sh install     copy this tool to ~/Library/Application Support/claude-rtl/src and
+#                               install the LaunchAgent; re-run after git pull. It keeps CLAUDE_APP, CLAUDE_RTL_DEST,
 #                               CLAUDE_RTL_KEEP_ID and CLAUDE_RTL_SIGN from this shell
 #   auto-rebuild.sh uninstall   remove the LaunchAgent
 #   auto-rebuild.sh selftest
 # Log: ~/Library/Logs/claude-rtl-autorebuild.log
-ROOT=${0:A:h:h}
+SELF=${0:A}   # $0 inside a function is the function name
+ROOT=${SELF:h:h}
 SRC=${CLAUDE_APP:-/Applications/Claude.app}
 DEST=${CLAUDE_RTL_DEST:-$HOME/Applications/Claude-RTL.app}
 LABEL=com.claude-rtl.autorebuild
@@ -62,12 +64,16 @@ install_agent() {
     [[ -n ${(P)v} ]] && env+="<key>$v</key><string>${(P)v}</string>"
   done
   mkdir -p ${PLIST:h} ${LOG:h}
+  # Background jobs may not read ~/Desktop or ~/Documents (macOS privacy), so the agent runs a copy.
+  local inst="$HOME/Library/Application Support/claude-rtl/src"
+  [[ -d $ROOT/node_modules ]] || npm ci --prefix $ROOT --no-audit --no-fund || return 1
+  mkdir -p $inst && rsync -a --delete --exclude .git --exclude test $ROOT/ $inst/ || return 1
   cat > $PLIST <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
   <key>Label</key><string>$LABEL</string>
-  <key>ProgramArguments</key><array><string>/bin/zsh</string><string>${0:A}</string></array>
+  <key>ProgramArguments</key><array><string>/bin/zsh</string><string>$inst/bin/auto-rebuild.sh</string></array>
   <key>EnvironmentVariables</key><dict>$env</dict>
   <key>WatchPaths</key><array><string>$SRC/Contents/Info.plist</string></array>
   <key>StartInterval</key><integer>600</integer>
